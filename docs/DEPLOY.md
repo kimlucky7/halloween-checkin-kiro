@@ -13,6 +13,14 @@ The account id is not stored in the repository; export `CLOUDFLARE_ACCOUNT_ID` w
 
 The demo contains one synthetic check-in (`ck-462c1a3b8d40`, normal + halloween editions). The Worker, D1 database and R2 bucket were first deployed from the predecessor development repository and are now deployed from this one; data and bindings are unchanged. There is no delete feature; removing it means clearing the `hc_*` tables in this project's own D1 database.
 
+## Imported records (2026-10-12)
+
+At the owner's request, the six check-ins from the owner's earlier site were imported with `scripts/import-pairs.mjs`, through the normal review → approve → publish path. Source: that site's public `/api/checkins` list and public media URLs (read-only; nothing in the earlier project was changed).
+
+- Images were converted to PNG without resampling. Two pairs were moved by a whole-pixel offset to meet the centring/baseline check (`(0, -14)` and `(-14, -1)`); the others are byte-for-byte the same pixels.
+- Place name and, where public, address were kept. Companions were empty. The earlier site's check-in time is stored as `capturedAt` with source `checkin` (time recorded when checking in, not EXIF).
+- All six were verified after publishing (public list entry, `image/png`, byte hash).
+
 ## Original checklist (kept for reference or for a second environment)
 
 Steps marked **owner** change a Cloudflare account and must not be run without the owner naming the target account.

@@ -42,6 +42,7 @@ const state = {
   view: "hero",
   busy: false,
   pending: null,
+  heading: null,
 };
 
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -350,7 +351,8 @@ async function chooseEdition(edition) {
 }
 
 function step(direction) {
-  const from = state.pending ?? state.index;
+  // Count from where we are heading, so quick repeated presses add up.
+  const from = state.pending ?? state.heading ?? state.index;
   return goTo(Math.min(state.checkins.length - 1, Math.max(0, from + direction)));
 }
 
@@ -364,6 +366,7 @@ async function goTo(next) {
   if (next === state.index) return;
   const direction = next > state.index ? 1 : -1;
   state.busy = true;
+  state.heading = next;
   if (!reduced()) {
     await els.flip.animate([{ transform: "none", opacity: 1 }, { transform: `translateX(${-direction * 60}px) scale(.94)`, opacity: 0 }], { duration: 180, easing: "ease-in" }).finished;
   }
@@ -381,6 +384,7 @@ async function goTo(next) {
     els.flip.style.opacity = "";
   }
   state.busy = false;
+  state.heading = null;
   if (state.pending !== null && state.pending !== undefined) {
     const pending = state.pending;
     state.pending = null;

@@ -25,7 +25,6 @@ const els = {
   expandCount: $("[data-expand-count]"),
   shelf: $("[data-shelf]"),
   grid: $("[data-grid]"),
-  back: $("[data-back]"),
   scheme: $("[data-scheme-toggle]"),
   mood: $("[data-mood-toggle]"),
   lang: $("[data-lang-toggle]"),
@@ -69,7 +68,6 @@ function renderChrome() {
   els.mood.setAttribute("aria-label", s.moodLabel);
   els.lang.textContent = s.lang;
   els.lang.setAttribute("aria-label", s.langLabel);
-  els.back.textContent = s.back;
   els.share.textContent = s.share;
   els.foot.textContent = s.footnote;
   els.expand.setAttribute("aria-label", s.all(state.checkins.length));
@@ -524,7 +522,11 @@ els.expand.addEventListener("click", () => {
   state.returnTo = state.view;
   openShelf("grid");
 });
-els.back.addEventListener("click", () => closeShelf());
+// No back button: tap a picture, tap the empty space around them, or press Esc.
+els.shelf.addEventListener("click", (e) => {
+  if (drag.moved || !(e.target instanceof Element) || e.target.closest(".cell")) return;
+  closeShelf();
+});
 els.scheme.addEventListener("click", toggleScheme);
 els.share.addEventListener("click", share);
 els.lang.addEventListener("click", () => {

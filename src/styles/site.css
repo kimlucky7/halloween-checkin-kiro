@@ -49,6 +49,8 @@ a { -webkit-tap-highlight-color: transparent; }
 ::view-transition-new(root) { z-index: 2; }
 
 .site {
+  position: relative;
+  z-index: 1;
   min-height: 100dvh;
   display: grid;
   place-items: center;
@@ -261,7 +263,7 @@ a.soft:hover { color: var(--ink); }
 
 /* ---------------------------------------------------------------- Halloween mood (decoration only) */
 
-.mood-layer { position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0; transition: opacity 0.7s ease; overflow: hidden; }
+.mood-layer { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0; transition: opacity 0.7s ease; overflow: hidden; }
 .mood-layer.on { opacity: 1; }
 .mood-layer .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(46, 16, 72, 0.4) 100%); }
 /* Fog: soft gradients only (a large blur filter is costly on phones). */
@@ -270,7 +272,7 @@ a.soft:hover { color: var(--ink); }
 .fog.b { bottom: -16%; background: radial-gradient(ellipse at 55% 50%, rgba(120, 100, 160, 0.28), transparent 62%); animation: drift 34s ease-in-out infinite alternate-reverse; }
 @keyframes drift { to { transform: translateX(14%); } }
 
-.moon { position: absolute; top: 6vh; right: 12vw; width: clamp(76px, 11vw, 140px); aspect-ratio: 1; filter: drop-shadow(0 0 28px rgba(253, 224, 140, 0.45)); animation: moon-rise 1.4s cubic-bezier(.2,.8,.2,1) both, moon-glow 7s ease-in-out 1.4s infinite; }
+.moon { position: absolute; top: calc(env(safe-area-inset-top) + 4.6rem); right: max(6vw, 1.5rem); width: clamp(76px, 11vw, 140px); aspect-ratio: 1; filter: drop-shadow(0 0 28px rgba(253, 224, 140, 0.45)); animation: moon-rise 1.4s cubic-bezier(.2,.8,.2,1) both, moon-glow 7s ease-in-out 1.4s infinite; }
 .moon svg { display: block; width: 100%; height: 100%; }
 @keyframes moon-rise { from { transform: translateY(40px) scale(0.9); opacity: 0; } }
 @keyframes moon-glow { 50% { filter: drop-shadow(0 0 42px rgba(253, 224, 140, 0.6)); } }

@@ -58,9 +58,9 @@ function flightKeyframes(acrossMoon) {
 }
 
 // A slow, looping drift for a ghost, with a gentle bob and sway.
-function hauntKeyframes() {
+function hauntKeyframes(side) {
   const frames = [];
-  const x0 = rand(6, 80);
+  const x0 = side < 0 ? rand(2, 12) : rand(76, 86);
   const y0 = rand(14, 62);
   const rx = rand(6, 14);
   const ry = rand(4, 9);
@@ -150,9 +150,9 @@ export function createMood(root) {
       g.style.setProperty("--size", `${rand(38, 64).toFixed(0)}px`);
       layer.append(g);
       if (!reducedMotion) {
-        animations.push(g.animate(hauntKeyframes(), { duration: rand(18000, 28000), iterations: Infinity, delay: -rand(0, 20000) }));
+        animations.push(g.animate(hauntKeyframes(i % 2 ? 1 : -1), { duration: rand(18000, 28000), iterations: Infinity, delay: -rand(0, 20000) }));
       } else {
-        g.style.transform = `translate(${rand(6, 80)}vw, ${rand(14, 60)}vh)`;
+        g.style.transform = `translate(${i % 2 ? rand(76, 86) : rand(2, 12)}vw, ${rand(14, 60)}vh)`;
       }
     }
 

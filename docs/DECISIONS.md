@@ -20,6 +20,8 @@ A subscription is not an API, so the public site cannot generate anything. Revie
 | Approval | `trusted-agent-attestation`: the server checks identity, payload hash, target and expiry, but cannot prove a human clicked |
 | Image generation | Host only. `pipeline/provider.js` has a host-import adapter and a mock |
 | Image preparation | `pipeline/prepare.js`: keep source alpha if present, else key out the flat backdrop connected to the image edge, unmix edges, drop specks, one shared transform onto 720×720 with the base at y = 651 |
+| Site modes | Two: **Day** (sun icon) shows the normal edition; **Night** (glowing jack-o'-lantern icon) shows the Halloween edition when a place has one, otherwise its normal night picture, plus the Halloween atmosphere. Decided by the owner on 2026-10-12. The data model still keeps theme and lighting separate, so a Halloween day picture can be published but is not shown by the site. Switching never generates anything |
+| Navigation | Places wrap around: the strip repeats the list (five copies, jump by whole periods while at rest), the big picture wraps too. Index 0 is the newest; moving right means newer |
 | Site motion | Springs (`src/lib/spring.js`) for entrance, tilt, edition flip and paging; circular reveal for day/night via the View Transitions API with a crossfade fallback; FLIP for opening and closing the shelf; all disabled under `prefers-reduced-motion` |
 
 ## Out of scope

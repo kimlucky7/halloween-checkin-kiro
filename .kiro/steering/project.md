@@ -8,7 +8,7 @@ Halloween Check-in. Everything in this repository was written for this project; 
 
 - Follow the requirements/design/tasks in `.kiro/specs/halloween-checkin/`. Implement in small verified stages; update task status only after actual work
 - The core is photo + checkin intent + optional Halloween → recognizable aligned transparent miniature day/night pair → exact review → explicit publication. No default city, city picker or city assembly
-- Treat `normal`/`halloween` asset theme, `day`/`night` lighting and optional website atmosphere as separate concepts. Never call generation on an atmosphere toggle or overwrite normal assets with festive variants
+- Keep `normal`/`halloween` asset theme and `day`/`night` lighting separate in data. The site shows two modes (owner decision): Day = normal edition, Night = Halloween edition when it exists (else the normal night picture) with the Halloween atmosphere. Never call generation from a mode switch or overwrite normal assets with festive variants
 - Kiro develops the system. Image generation belongs to a verified host or provider adapter. The publish MCP does not generate images
 - Unknown location/capture metadata stays unknown. Use only approved source data; do not expose original photos, private EXIF or secrets
 - Bind approval to immutable final bytes, metadata and target. Mutations invalidate approval. Make publication idempotent and inspect uncertain outcomes before retrying

@@ -201,7 +201,7 @@ time.soft[title] { text-decoration: underline dotted var(--faint); text-underlin
 
 /* ---------------------------------------------------------------- shelf */
 
-.shelf { width: min(100%, 62rem); display: flex; flex-direction: column; align-items: center; gap: 2rem; }
+.shelf { padding-top: 3.25rem; width: min(100%, 62rem); display: flex; flex-direction: column; align-items: center; gap: 2rem; }
 .grid {
   list-style: none;
   width: 100%;
@@ -246,7 +246,7 @@ time.soft[title] { text-decoration: underline dotted var(--faint); text-underlin
 .lost a { text-decoration: underline; text-underline-offset: 4px; }
 
 @media (max-width: 30rem) {
-  .foot { display: none; }
+  .foot, .build { display: none; }
   .caption { font-size: 1.08rem; }
 }
 

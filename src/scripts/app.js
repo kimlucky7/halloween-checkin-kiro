@@ -41,6 +41,7 @@ const state = {
   lang: (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en",
   view: "hero",
   busy: false,
+  pending: null,
 };
 
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -166,8 +167,8 @@ function renderStrip({ scroll = "smooth" } = {}) {
   moveDot(active, scroll === "instant");
 }
 
-const dotX = spring({ stiffness: 260, damping: 24 });
-const dotW = spring({ stiffness: 260, damping: 24 });
+const dotX = spring({ stiffness: 260, damping: 24, precision: 0.3 });
+const dotW = spring({ stiffness: 260, damping: 24, precision: 0.3 });
 let dotLoop = null;
 function moveDot(active, instant) {
   // offsetLeft is measured inside the list's content box, independent of scrolling.
@@ -283,9 +284,9 @@ function visibleHeroImage() {
 
 async function entrance() {
   if (reduced()) return;
-  const y = spring({ from: 36, to: 0, stiffness: 140, damping: 16 });
-  const sc = spring({ from: 0.9, to: 1, stiffness: 160, damping: 18 });
-  const op = spring({ from: 0, to: 1, stiffness: 120, damping: 20 });
+  const y = spring({ from: 36, to: 0, stiffness: 140, damping: 16, precision: 0.3 });
+  const sc = spring({ from: 0.9, to: 1, stiffness: 160, damping: 18, precision: 0.002 });
+  const op = spring({ from: 0, to: 1, stiffness: 120, damping: 20, precision: 0.01 });
   await run([y, sc, op], ([dy, s, o]) => {
     els.flip.style.transform = `translateY(${dy}px) scale(${s})`;
     els.flip.style.opacity = String(Math.min(1, Math.max(0, o)));
@@ -300,8 +301,8 @@ async function entrance() {
 
 // Tilt toward the pointer with a sheen that follows it, sprung so it eases back.
 function setupTilt() {
-  const rx = spring({ stiffness: 120, damping: 14 });
-  const ry = spring({ stiffness: 120, damping: 14 });
+  const rx = spring({ stiffness: 120, damping: 14, precision: 0.02 });
+  const ry = spring({ stiffness: 120, damping: 14, precision: 0.02 });
   rx.target = 0;
   ry.target = 0;
   let loop = null;
@@ -342,18 +343,25 @@ async function chooseEdition(edition) {
   await els.flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)" }], { duration: 200, easing: "cubic-bezier(.5,0,.9,.5)" }).finished;
   render();
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
-  const r = spring({ from: -90, to: 0, stiffness: 180, damping: 15 });
+  const r = spring({ from: -90, to: 0, stiffness: 180, damping: 15, precision: 0.1 });
   await run([r], ([deg]) => (els.flip.style.transform = `rotateY(${deg}deg)`)).done;
   els.flip.style.transform = "";
   state.busy = false;
 }
 
 function step(direction) {
-  return goTo(state.index + direction);
+  const from = state.pending ?? state.index;
+  return goTo(Math.min(state.checkins.length - 1, Math.max(0, from + direction)));
 }
 
 async function goTo(next) {
-  if (state.view !== "hero" || state.busy || next === state.index || next < 0 || next >= state.checkins.length) return;
+  if (state.view !== "hero" || next < 0 || next >= state.checkins.length) return;
+  if (state.busy) {
+    // Remember the latest request and go there as soon as the current move ends.
+    state.pending = next;
+    return;
+  }
+  if (next === state.index) return;
   const direction = next > state.index ? 1 : -1;
   state.busy = true;
   if (!reduced()) {
@@ -363,8 +371,8 @@ async function goTo(next) {
   render();
   if (!reduced()) {
     await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
-    const x = spring({ from: direction * 60, to: 0, stiffness: 200, damping: 20 });
-    const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26 });
+    const x = spring({ from: direction * 60, to: 0, stiffness: 200, damping: 20, precision: 0.3 });
+    const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26, precision: 0.01 });
     await run([x, o], ([dx, op]) => {
       els.flip.style.transform = `translateX(${dx}px)`;
       els.flip.style.opacity = String(Math.min(1, op));
@@ -373,6 +381,11 @@ async function goTo(next) {
     els.flip.style.opacity = "";
   }
   state.busy = false;
+  if (state.pending !== null && state.pending !== undefined) {
+    const pending = state.pending;
+    state.pending = null;
+    goTo(pending);
+  }
 }
 
 async function openShelf() {

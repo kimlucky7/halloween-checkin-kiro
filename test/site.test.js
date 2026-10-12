@@ -90,6 +90,16 @@ test("an underdamped spring overshoots, a critically damped one does not", () =>
   assert.ok(maxF <= 1.0005);
 });
 
+test("precision decides when a spring counts as settled", () => {
+  const px = spring({ from: 60, to: 0, stiffness: 200, damping: 20, precision: 0.3 });
+  const tight = spring({ from: 60, to: 0, stiffness: 200, damping: 20 });
+  let a = 0, b = 0;
+  while (!px.settled() && a < 1000) { px.step(1 / 60); a++; }
+  while (!tight.settled() && b < 1000) { tight.step(1 / 60); b++; }
+  assert.ok(a < b, `coarse precision settles sooner (${a} vs ${b} frames)`);
+  assert.ok(a < 60, "a half-pixel spring settles within a second");
+});
+
 test("spring stepping is frame-rate independent", () => {
   const a = spring({ from: 0, to: 1 });
   const b = spring({ from: 0, to: 1 });

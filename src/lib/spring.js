@@ -2,7 +2,9 @@
 // tilt, flip). Pure: the caller supplies time steps, so it is testable and
 // frame-rate independent.
 
-export function spring({ stiffness = 170, damping = 26, mass = 1, from = 0, to = 1, velocity = 0 } = {}) {
+// `precision` is how close (in the value's own unit) counts as settled:
+// about half a pixel for positions, a hundredth for opacity or scale.
+export function spring({ stiffness = 170, damping = 26, mass = 1, from = 0, to = 1, velocity = 0, precision = 0.001 } = {}) {
   let x = from;
   let v = velocity;
   let target = to;
@@ -30,7 +32,7 @@ export function spring({ stiffness = 170, damping = 26, mass = 1, from = 0, to =
       }
       return x;
     },
-    settled(epsilon = 0.001) {
+    settled(epsilon = precision) {
       return Math.abs(x - target) < epsilon && Math.abs(v) < epsilon * 10;
     },
     snap() {

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+.env
+.env.*
+.dev.vars*
+*.sqlite
+*.sqlite3
+*.db
+.DS_Store
+# local review workspaces and raw generations (may contain private images)
+ws/
+work/

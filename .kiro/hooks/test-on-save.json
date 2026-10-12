@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run tests when source files are saved",
+      "trigger": "PostFileSave",
+      "description": "Keeps the verification loop short: the full suite runs in a few seconds and its summary is shown after each save.",
+      "matcher": "^.*/(worker|pipeline|src/lib|scripts|testkit|test)/.*\\.(js|mjs)$",
+      "action": {
+        "type": "command",
+        "command": "npm test --silent 2>&1 | grep -E \"^ℹ (tests|pass|fail)|^✖\" | head -20",
+        "timeout": 120
+      }
+    }
+  ]
+}

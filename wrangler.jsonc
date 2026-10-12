@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "halloween-checkin",
+  "main": "worker/halloween/index.js",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+    // Ordinary page views stay on the asset path. APIs and media must reach the Worker.
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  // Non-secret configuration. PROJECT_ID is part of every approval's target.
+  "vars": { "PROJECT_ID": "halloween-checkin-prod" },
+  // Resources created for this project only (names prefixed halloween-checkin).
+  // The account id is deliberately not stored here: export CLOUDFLARE_ACCOUNT_ID
+  // when running wrangler so the target is always explicit.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "halloween-checkin", "database_id": "8e431479-cb92-4c97-9c2e-1ae28caf1fab", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "halloween-checkin-media" }],
+  "workers_dev": true,
+  "preview_urls": false
+  // OWNER_TOKEN is a secret: set it with `wrangler secret put`, never in this file.
+}

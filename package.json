@@ -1,0 +1,29 @@
+{
+  "name": "halloween-checkin",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Photos of real places turned into reviewed day/night miniature buildings, with a Halloween edition.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "verify": "npm test && npm run build",
+    "dev": "astro dev",
+    "dev:worker": "wrangler dev --config wrangler.local.jsonc",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "prepare:images": "node scripts/prepare.mjs",
+    "hc": "node scripts/hc.mjs",
+    "e2e:local": "npm run build && node scripts/e2e-local.mjs"
+  },
+  "dependencies": {
+    "astro": "7.2.9",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  }
+}

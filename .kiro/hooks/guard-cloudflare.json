@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Confirm before remote Cloudflare changes",
+      "trigger": "PreToolUse",
+      "description": "wrangler is logged in to accounts that include a production account. Ask the user before deploy, secret, create, delete or remote operations.",
+      "matcher": "execute_bash|shell|bash",
+      "action": {
+        "type": "command",
+        "command": "node scripts/guard-cloudflare.mjs",
+        "timeout": 10
+      }
+    }
+  ]
+}

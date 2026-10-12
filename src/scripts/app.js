@@ -523,8 +523,10 @@ els.expand.addEventListener("click", () => {
   openShelf("grid");
 });
 // No back button: tap a picture, tap the empty space around them, or press Esc.
-els.shelf.addEventListener("click", (e) => {
-  if (drag.moved || !(e.target instanceof Element) || e.target.closest(".cell")) return;
+document.addEventListener("click", (e) => {
+  if (state.view === "hero" || drag.moved || !(e.target instanceof Element)) return;
+  // Pictures, buttons and links keep their own meaning; everything else is empty space.
+  if (e.target.closest(".cell, button, a, .mood-layer")) return;
   closeShelf();
 });
 els.scheme.addEventListener("click", toggleScheme);

@@ -7,6 +7,7 @@ export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const MAX_TEXT_LENGTH = 280;
 export const MAX_COMPANIONS = 10;
 export const MAX_DIFFERENCES = 20;
+export const CAPTURE_SOURCES = ["exif", "user", "checkin"];
 
 export class ValidationError extends Error {
   constructor(issues) {
@@ -54,8 +55,10 @@ export function validateRevisionInput(input, { project }) {
     } else {
       capturedAt = obj.capturedAt;
     }
-    if (!["exif", "user"].includes(obj.capturedAtSource)) {
-      fail("capturedAtSource", "must be 'exif' or 'user' when capturedAt is set");
+    // exif: from the photo's metadata; user: stated by the owner;
+    // checkin: the time the owner recorded when checking in on site (imported records).
+    if (!CAPTURE_SOURCES.includes(obj.capturedAtSource)) {
+      fail("capturedAtSource", `must be one of ${CAPTURE_SOURCES.join(", ")} when capturedAt is set`);
     } else {
       capturedAtSource = obj.capturedAtSource;
     }

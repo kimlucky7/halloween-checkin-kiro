@@ -47,6 +47,8 @@ test("capture time needs an explicit zone and a source", () => {
   assert.throws(() => validateRevisionInput({ ...base(), capturedAt: "2026-10-01T10:00:00" }, ctx), /capturedAt/);
   assert.throws(() => validateRevisionInput({ ...base(), capturedAt: "2026-10-01T10:00:00+08:00" }, ctx), /capturedAtSource/);
   assert.throws(() => validateRevisionInput({ ...base(), capturedAtSource: "exif" }, ctx), /capturedAtSource/);
+  assert.throws(() => validateRevisionInput({ ...base(), capturedAt: "2026-10-01T10:00:00+08:00", capturedAtSource: "guess" }, ctx), /capturedAtSource/);
+  assert.equal(validateRevisionInput({ ...base(), capturedAt: "2026-10-01T10:00:00Z", capturedAtSource: "checkin" }, ctx).payload.capturedAtSource, "checkin");
   const ok = validateRevisionInput({ ...base(), capturedAt: "2026-10-01T10:00:00+08:00", capturedAtSource: "exif" }, ctx);
   assert.equal(ok.payload.capturedAt, "2026-10-01T10:00:00+08:00");
 });

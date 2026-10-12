@@ -87,9 +87,9 @@ export function createMood(root) {
     get on() {
       return Boolean(layer);
     },
-    toggle(options) {
-      if (layer) disable();
-      else enable(options);
+    set(on, options = {}) {
+      if (on) enable(options);
+      else disable();
       return Boolean(layer);
     },
   };

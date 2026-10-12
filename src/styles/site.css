@@ -129,7 +129,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .caption { font-size: 1.2rem; line-height: 1.5; margin-top: 0.4rem; text-wrap: balance; }
 .soft { color: var(--soft); transition: color 0.2s ease; }
 a.soft:hover { color: var(--ink); }
-.note { min-height: 1.3rem; margin-top: 0.3rem; font-size: 0.82rem; color: var(--soft); }
 
 .row { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
 .row.quiet { margin-top: 0.6rem; }
@@ -150,11 +149,6 @@ a.soft:hover { color: var(--ink); }
 }
 .chip:hover { color: var(--ink); }
 .chip:active { transform: scale(0.95); }
-.chip[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 0 0 1.5px currentColor; }
-.chip.missing:not([aria-pressed="true"]) { opacity: 0.5; }
-.pumpkin { width: 1.05rem; height: 1.05rem; color: #e8791c; }
-[data-mood-toggle][aria-pressed="true"] .pumpkin { animation: wobble 1.6s ease-in-out infinite; }
-@keyframes wobble { 25% { rotate: -10deg; } 75% { rotate: 10deg; } }
 
 /* ---------------------------------------------------------------- shelf: strip and grid */
 
@@ -181,6 +175,7 @@ a.soft:hover { color: var(--ink); }
   gap: 1.25rem;
 }
 .shelf[data-mode="strip"] .grid {
+  position: relative;
   flex-wrap: nowrap;
   justify-content: flex-start;
   gap: clamp(0.5rem, 2vw, 1.75rem);
@@ -202,7 +197,6 @@ a.soft:hover { color: var(--ink); }
   scroll-snap-align: center;
   transform: rotateY(var(--tilt, 0deg)) scale(var(--depth, 1));
   opacity: var(--fade, 1);
-  will-change: transform, opacity;
 }
 .shelf[data-mode="strip"] .when,
 .shelf[data-mode="strip"] .name { translate: var(--shift, 0) 0; }
@@ -229,6 +223,19 @@ a.soft:hover { color: var(--ink); }
 .chip.icon[aria-expanded="true"] svg { transform: rotate(45deg) scale(0.9); }
 .chip.icon span { font-variant-numeric: tabular-nums; font-size: 0.85rem; }
 .corner.right { right: calc(1.25rem + env(safe-area-inset-right)); }
+
+/* Day / night switch: a sun by day, a glowing jack-o'-lantern at night. */
+.chip.mode { width: 3rem; height: 3rem; padding: 0; justify-content: center; }
+.mode-icon { position: relative; display: block; width: 1.75rem; height: 1.75rem; }
+.mode-icon svg { position: absolute; inset: 0; width: 100%; height: 100%; transition: transform 0.7s cubic-bezier(.3,1.5,.5,1), opacity 0.35s ease; transform-origin: 50% 55%; }
+.mode-icon .sun { opacity: 1; transform: rotate(0) scale(1); }
+.mode-icon .pumpkin { opacity: 0; transform: translateY(55%) rotate(-40deg) scale(0.4); }
+:root[data-scheme="dark"] .mode-icon .sun { opacity: 0; transform: translateY(-55%) rotate(120deg) scale(0.4); }
+:root[data-scheme="dark"] .mode-icon .pumpkin { opacity: 1; transform: none; filter: drop-shadow(0 0 5px rgba(251, 146, 60, 0.55)); }
+.chip.mode:hover .sun { transform: rotate(25deg) scale(1.08); }
+.chip.mode:hover .pumpkin { transform: rotate(-6deg) scale(1.08); }
+.mode-icon .pumpkin .face { animation: flicker-face 3.4s ease-in-out infinite; }
+@keyframes flicker-face { 0%, 100% { opacity: 1; } 22% { opacity: 0.72; } 38% { opacity: 1; } 64% { opacity: 0.82; } }
 .foot {
   position: fixed;
   left: 50%;

@@ -22,11 +22,7 @@ import Page from "../layouts/Page.astro";
       </button>
 
       <p class="caption" data-caption aria-live="polite"></p>
-      <p class="note" data-note role="status"></p>
 
-      <div class="row">
-        <div class="editions" data-editions role="group" aria-label="Edition"></div>
-      </div>
       <div class="row quiet">
         <button type="button" class="text-button" data-share>Share</button>
       </div>
@@ -43,16 +39,28 @@ import Page from "../layouts/Page.astro";
       </button>
     </div>
     <div class="corner left">
-      <button type="button" class="chip" data-scheme-toggle>Night</button>
+      <button type="button" class="chip mode" data-scheme-toggle>
+        <span class="mode-icon" aria-hidden="true">
+          <svg class="sun" viewBox="0 0 32 32">
+            <g stroke="#f59e0b" stroke-width="2.4" stroke-linecap="round">
+              <path d="M16 2.5v3.6M16 25.9v3.6M2.5 16h3.6M25.9 16h3.6M6.5 6.5l2.5 2.5M23 23l2.5 2.5M25.5 6.5 23 9M9 23l-2.5 2.5" />
+            </g>
+            <circle cx="16" cy="16" r="6.6" fill="#fbbf24" stroke="#f59e0b" stroke-width="1.4" />
+          </svg>
+          <svg class="pumpkin" viewBox="0 0 32 32">
+            <path d="M16 8.2c-.9-2.6.2-5 2.8-5.4" fill="none" stroke="#5b8a2b" stroke-width="2.4" stroke-linecap="round" />
+            <path d="M16 8.6c-2.7-2-7.1-1.5-9.5 1.3C4 12.9 3.7 18 5.8 21.700c1.7 3 5.4 4.8 10.2 4.800s8.5-1.8 10.2-4.800c2.1-3.7 1.8-8.8-.7-11.8-2.4-2.8-6.8-3.3-9.5-1.300z" fill="#f97316" stroke="#c2410c" stroke-width="1.2" />
+            <path d="M16 9v17M11.3 9.600c-2.2 3.6-2.2 12 .6 16.300M20.7 9.600c2.2 3.6 2.2 12-.6 16.3" fill="none" stroke="#c2410c" stroke-width="1" opacity=".55" />
+            <g class="face" fill="#fde68a">
+              <path d="M9.6 14.2 13.2 15.6 10.4 18.400z" />
+              <path d="M22.4 14.2 18.8 15.6 21.6 18.400z" />
+              <path d="M9.8 20.400l2.1 1.7 1.5-1.3 1.5 1.4 1.6-1.4 1.5 1.3 1.6-1.4 2.1 1.6-1.4 2.200H11.200z" />
+            </g>
+          </svg>
+        </span>
+      </button>
     </div>
     <div class="corner right">
-      <button type="button" class="chip" data-mood-toggle aria-pressed="false">
-        <svg class="pumpkin" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 6c-1-2 0-4 2-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          <path d="M12 6.5c-2.2-1.2-5-.9-6.8.8C3.4 9 3 12.3 4 15.2c1.1 3.4 4.4 5.3 8 5.3s6.9-1.9 8-5.3c1-2.9.6-6.2-1.2-7.9-1.8-1.7-4.6-2-6.8-.8z" fill="currentColor" />
-        </svg>
-        <span>Mood</span>
-      </button>
       <button type="button" class="chip" data-lang-toggle>中文</button>
     </div>
 

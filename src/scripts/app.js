@@ -1,13 +1,20 @@
-// Site behaviour and motion. Reads data only through ./data.js; decides what to
-// show only through ../lib/view.js. Record text is always inserted with
-// textContent, never parsed as HTML.
-import { caption, depthFor, editionsOf, pickVariant, shareFileName, shortDate, sortCheckins, STRINGS } from "../lib/view.js";
+// Site behaviour and motion.
+//
+// Two modes only: Day shows each place's normal picture; Night shows the
+// Halloween edition when a place has one (otherwise its normal night picture)
+// together with the Halloween atmosphere. Reads data only through ./data.js and
+// decides what to show only through ../lib/view.js. Record text is always
+// inserted with textContent, never parsed as HTML.
+import {
+  caption, depthFor, loopShift, modeEdition, nearestTo, pickVariant,
+  shareFileName, shortDate, sortCheckins, stepIndex, STRINGS,
+} from "../lib/view.js";
 import { run, spring } from "../lib/spring.js";
 import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
 
 const root = document.documentElement;
-root.dataset.app = "2"; // bump when a cached broken bundle must be bypassed
+root.dataset.app = "3"; // bump when a cached broken bundle must be bypassed
 const $ = (sel) => document.querySelector(sel);
 const els = {
   stage: $("[data-stage]"),
@@ -18,31 +25,59 @@ const els = {
   night: $("[data-img='night']"),
   sheen: $("[data-sheen]"),
   caption: $("[data-caption]"),
-  note: $("[data-note]"),
-  editions: $("[data-editions]"),
   share: $("[data-share]"),
   expand: $("[data-expand]"),
   expandCount: $("[data-expand-count]"),
   shelf: $("[data-shelf]"),
   grid: $("[data-grid]"),
   scheme: $("[data-scheme-toggle]"),
-  mood: $("[data-mood-toggle]"),
   lang: $("[data-lang-toggle]"),
   status: $("[data-status]"),
   foot: $("[data-foot]"),
 };
 
+// The strip repeats the list so there is always a picture on both sides:
+// five copies, the middle one is "home". Index 0 is the newest place.
+const COPIES = 5;
+const HOME = 2;
+
 const state = {
   checkins: [],
   index: 0,
-  edition: "normal",
   lang: (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en",
-  view: "hero",
+  view: "hero", // "hero" | "strip" | "grid"
+  returnTo: "hero",
   busy: false,
   pending: null,
-  returnTo: "hero",
+  pendingDir: 1,
   heading: null,
 };
+
+const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const finePointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
+const isNight = () => root.dataset.scheme === "dark";
+const lighting = () => (isNight() ? "night" : "day");
+const t = () => STRINGS[state.lang];
+const current = () => state.checkins[state.index];
+const el = (tag, attrs = {}, text) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+// The picture a place shows in a mode: Night → Halloween edition if it exists.
+const variantFor = (checkin, night) => pickVariant(checkin, modeEdition(night)).variant;
+const urlFor = (checkin, night) => variantFor(checkin, night)[night ? "night" : "day"];
+const urlsForMode = (night) => state.checkins.map((c) => urlFor(c, night));
+const heroUrls = (checkin) => [urlFor(checkin, false), urlFor(checkin, true)];
+
+// ------------------------------------------------------------ input modality
+// Focus rings are for keyboard users: after a pointer interaction, do not move focus.
+let keyboardMode = false;
+addEventListener("keydown", (e) => { if (!e.metaKey && !e.ctrlKey && !e.altKey) keyboardMode = true; }, true);
+addEventListener("pointerdown", () => (keyboardMode = false), true);
+const focusIfKeyboard = (node) => { if (keyboardMode) node?.focus({ preventScroll: true }); };
 
 // While an animation runs, the latest requested action waits and runs right after.
 let queued = null;
@@ -58,28 +93,33 @@ function settle() {
   next?.();
 }
 
-const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-const finePointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
-const lighting = () => (root.dataset.scheme === "dark" ? "night" : "day");
-const t = () => STRINGS[state.lang];
-const current = () => state.checkins[state.index];
-const el = (tag, attrs = {}, text) => {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
+// ------------------------------------------------------------ pictures ready before they show
+// A view is only swapped once the pictures it needs are decoded, so a swap never
+// paints an empty frame or lets thumbnails pop in late.
+const decoded = new Map();
+function ensureLoaded(urls, timeout = 800) {
+  const jobs = urls.filter(Boolean).map((url) => {
+    let job = decoded.get(url);
+    if (!job) {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = url;
+      job = img.decode().then(() => img, () => img); // a failed picture must never block the page
+      decoded.set(url, job);
+    }
+    return job;
+  });
+  return Promise.race([Promise.all(jobs), new Promise((resolve) => setTimeout(resolve, timeout))]);
+}
 
-// ---------------------------------------------------------------- rendering
+// ------------------------------------------------------------ rendering
 
 function renderChrome() {
   const s = t();
   root.lang = state.lang === "zh" ? "zh-Hans" : "en";
-  const night = lighting() === "night";
-  els.scheme.textContent = night ? s.toLight : s.toDark;
-  els.scheme.setAttribute("aria-label", s.schemeLabel(night));
-  els.mood.querySelector("span").textContent = s.mood;
-  els.mood.setAttribute("aria-label", s.moodLabel);
+  const label = s.schemeLabel(isNight());
+  els.scheme.setAttribute("aria-label", label);
+  els.scheme.title = label;
   els.lang.textContent = s.lang;
   els.lang.setAttribute("aria-label", s.langLabel);
   els.share.textContent = s.share;
@@ -90,13 +130,15 @@ function renderChrome() {
   els.expand.hidden = state.checkins.length < 2;
 }
 
-function setPictures(variant, checkin) {
+function setPictures(checkin) {
   const s = t();
-  els.day.src = variant.day;
-  els.night.src = variant.night;
-  els.day.alt = lighting() === "day" ? s.alt(variant.theme, "day", checkin.place?.name) : "";
-  els.night.alt = lighting() === "night" ? s.alt(variant.theme, "night", checkin.place?.name) : "";
-  els.sheen.style.setProperty("--mask", `url("${variant.day}")`);
+  const dayVariant = variantFor(checkin, false);
+  const nightVariant = variantFor(checkin, true);
+  els.day.src = dayVariant.day;
+  els.night.src = nightVariant.night;
+  els.day.alt = isNight() ? "" : s.alt(dayVariant.theme, "day", checkin.place?.name);
+  els.night.alt = isNight() ? s.alt(nightVariant.theme, "night", checkin.place?.name) : "";
+  els.sheen.style.setProperty("--mask", `url("${isNight() ? nightVariant.night : dayVariant.day}")`);
 }
 
 function renderCaption(checkin) {
@@ -115,81 +157,171 @@ function renderCaption(checkin) {
   }
 }
 
-function renderEditions(checkin) {
-  const s = t();
-  const have = editionsOf(checkin);
-  els.editions.replaceChildren();
-  for (const edition of ["normal", "halloween"]) {
-    const b = el("button", {
-      type: "button",
-      class: `chip${have.includes(edition) ? "" : " missing"}`,
-      "aria-pressed": String(state.edition === edition),
-      "data-edition": edition,
-    }, s[edition]);
-    b.addEventListener("click", () => chooseEdition(edition));
-    els.editions.append(b);
-  }
-}
-
 function renderHero() {
   const checkin = current();
   if (!checkin) return;
-  const { variant, available } = pickVariant(checkin, state.edition);
-  setPictures(variant, checkin);
+  setPictures(checkin);
   renderCaption(checkin);
-  renderEditions(checkin);
-  els.note.textContent = available ? "" : t().noEdition(t()[state.edition]);
+  els.expand.setAttribute("aria-expanded", "false");
 }
 
 // Two ways to see every place:
 //  - "strip": one row you swipe sideways, oldest on the left and the newest on the
-//    right, the picture in the middle shown largest;
+//    right, repeated so it never runs out; the picture in the middle is largest;
 //  - "grid": everything at once, newest first.
-function shelfOrder() {
-  const order = state.checkins.map((_, i) => i);
-  return state.view === "strip" ? order.reverse() : order;
+function renderShelf() {
+  const mode = state.view;
+  const n = state.checkins.length;
+  const copies = mode === "strip" ? COPIES : 1;
+  els.shelf.dataset.mode = mode;
+  els.grid.replaceChildren();
+  for (let c = 0; c < copies; c++) {
+    const home = mode === "grid" || c === HOME;
+    for (let p = 0; p < n; p++) {
+      const i = mode === "strip" ? n - 1 - p : p;
+      const checkin = state.checkins[i];
+      const name = checkin.place?.name ?? checkin.text;
+      const li = el("li", { class: "cell", "data-cell": String(i), "data-copy": String(c), "aria-hidden": home ? null : "true" });
+      const button = el("button", { type: "button", class: "thumb", "aria-label": t().view(name), tabindex: home ? "0" : "-1" });
+      const img = el("img", { src: urlFor(checkin, isNight()), alt: "", width: "360", height: "360", decoding: "async" });
+      button.append(img);
+      button.addEventListener("click", () => {
+        if (drag.moved) return;
+        closeShelf(i, img);
+      });
+      li.append(
+        el("p", { class: "when" }, shortDate(checkin.capturedAt ?? checkin.publishedAt, state.lang)),
+        button,
+        el("p", { class: "name" }, name),
+      );
+      els.grid.append(li);
+    }
+  }
+  els.expand.setAttribute("aria-expanded", String(mode === "grid"));
 }
 
-function renderShelf() {
-  els.shelf.dataset.mode = state.view;
-  els.grid.replaceChildren();
-  for (const i of shelfOrder()) {
-    const checkin = state.checkins[i];
-    const { variant } = pickVariant(checkin, state.edition);
-    const name = checkin.place?.name ?? checkin.text;
-    const li = el("li", { class: "cell", "data-cell": String(i) });
-    const button = el("button", { type: "button", class: "thumb", "aria-label": t().view(name), "data-index": String(i) });
-    button.append(el("img", { src: variant[lighting()], alt: "", width: "360", height: "360", loading: "lazy", decoding: "async" }));
-    button.addEventListener("click", () => {
-      if (drag.moved) return;
-      closeShelf(i);
-    });
-    li.append(el("p", { class: "when" }, shortDate(checkin.capturedAt ?? checkin.publishedAt, state.lang)), button, el("p", { class: "name" }, name));
-    els.grid.append(li);
+// Re-render without losing the strip's position (rebuilding the list resets its scroll).
+function rerender() {
+  const keep = state.view === "strip" ? nearestCell()?.dataset.cell : undefined;
+  render();
+  if (keep !== undefined) {
+    centerCell(homeCell(Number(keep)));
+    applyDepth();
   }
-  els.expand.setAttribute("aria-expanded", String(state.view === "grid"));
 }
 
 function render() {
   renderChrome();
-  if (state.view === "hero") {
-    renderHero();
-    els.expand.setAttribute("aria-expanded", "false");
-  } else {
+  if (state.view === "hero") renderHero();
+  else {
     renderShelf();
-    updateDepth();
+    if (state.view === "strip") applyDepth();
   }
 }
 
-// ---------------------------------------------------------------- motion helpers
+// ------------------------------------------------------------ strip geometry
+const cellCenter = (li) => li.offsetLeft + li.offsetWidth / 2;
+const homeCell = (index) => els.grid.querySelector(`[data-cell="${index}"][data-copy="${HOME}"]`) ?? els.grid.querySelector(`[data-cell="${index}"]`);
+
+function nearestCell() {
+  const cells = [...els.grid.children];
+  const at = nearestTo(cells.map(cellCenter), els.grid.scrollLeft + els.grid.clientWidth / 2);
+  return cells[at] ?? null;
+}
+
+function centerCell(li, behavior = "instant") {
+  if (state.view !== "strip" || !li) return;
+  const left = cellCenter(li) - els.grid.clientWidth / 2;
+  els.grid.scrollTo({ left, behavior: reduced() ? "instant" : behavior });
+}
+
+// Pictures nearer the middle are larger and brighter, and turn toward the middle.
+// Positions come from layout offsets, not from transformed rectangles.
+function applyDepth() {
+  if (state.view !== "strip") return;
+  const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
+  const plain = reduced();
+  for (const cell of els.grid.children) {
+    if (plain) {
+      cell.style.removeProperty("--depth");
+      cell.style.removeProperty("--fade");
+      cell.style.removeProperty("--tilt");
+      cell.style.removeProperty("--shift");
+      continue;
+    }
+    const offset = (cellCenter(cell) - mid) / cell.offsetWidth;
+    if (Math.abs(offset) > 3.2) continue; // far outside the screen
+    const { scale, opacity, tilt, shift } = depthFor(offset);
+    cell.style.setProperty("--depth", scale.toFixed(3));
+    cell.style.setProperty("--fade", opacity.toFixed(3));
+    cell.style.setProperty("--tilt", `${tilt.toFixed(2)}deg`);
+    cell.style.setProperty("--shift", `${shift.toFixed(1)}px`);
+  }
+}
+let depthFrame = 0;
+function scheduleDepth() {
+  if (depthFrame) return;
+  depthFrame = requestAnimationFrame(() => {
+    depthFrame = 0;
+    applyDepth();
+  });
+}
+
+// The copies are identical, so jumping by exactly one period is invisible. Done when
+// the strip is at rest, or at once if the centre is about to reach either end.
+function loopPeriod() {
+  const first = (c) => els.grid.querySelector(`[data-copy="${c}"]`);
+  return first(HOME + 1).offsetLeft - first(HOME).offsetLeft;
+}
+function normalizeLoop() {
+  if (state.view !== "strip" || drag.active) return;
+  const cell = nearestCell();
+  if (!cell) return;
+  const copy = Number(cell.dataset.copy);
+  if (copy === HOME) return;
+  const active = document.activeElement;
+  els.grid.style.scrollSnapType = "none";
+  els.grid.scrollLeft += loopShift(copy, HOME, loopPeriod());
+  requestAnimationFrame(() => (els.grid.style.scrollSnapType = ""));
+  if (active instanceof HTMLElement && els.grid.contains(active)) {
+    const owner = active.closest(".cell");
+    const moved = Number(owner.dataset.copy) + (HOME - copy);
+    els.grid.querySelector(`[data-cell="${owner.dataset.cell}"][data-copy="${moved}"] button`)?.focus({ preventScroll: true });
+  }
+}
+
+let idleTimer = 0;
+let stepTarget = null;
+function onGridScroll() {
+  scheduleDepth();
+  const cell = nearestCell();
+  const copy = cell ? Number(cell.dataset.copy) : HOME;
+  if (copy === 0 || copy === COPIES - 1) normalizeLoop();
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    stepTarget = null;
+    normalizeLoop();
+  }, 140);
+}
+
+function stripStep(dir) {
+  const base = stepTarget ?? nearestCell();
+  const next = dir > 0 ? base?.nextElementSibling : base?.previousElementSibling;
+  if (!next) return;
+  stepTarget = next;
+  centerCell(next, "smooth");
+  focusIfKeyboard(next.querySelector("button"));
+}
+
+// ------------------------------------------------------------ motion helpers
 
 // Shared-element flight between the big picture and the strip/grid.
-// Driven by a spring, so it lands with a small overshoot; travels on an arc,
-// swells slightly and casts a growing shadow while in the air.
-function flyClone(img, from, to, { arc = -36, lean = 4, stiffness = 190, damping = 21 } = {}) {
+// Driven by a spring, so it lands with a small overshoot; travels on an arc and
+// leans a little. `onLand` runs in the same frame in which the clone is removed.
+function flyClone(img, from, to, { onLand, arc = -36, lean = 4, stiffness = 190, damping = 21 } = {}) {
   const clone = img.cloneNode();
   clone.removeAttribute("loading");
-  clone.style.cssText = ""; // the source may be hidden while it is being flown to
+  clone.style.cssText = "";
   Object.assign(clone.style, {
     position: "fixed",
     left: `${to.left}px`,
@@ -200,7 +332,6 @@ function flyClone(img, from, to, { arc = -36, lean = 4, stiffness = 190, damping
     zIndex: "40",
     pointerEvents: "none",
     transformOrigin: "0 0",
-    willChange: "transform, filter",
   });
   document.body.append(clone);
   const dx = from.left - to.left;
@@ -209,23 +340,21 @@ function flyClone(img, from, to, { arc = -36, lean = 4, stiffness = 190, damping
   const sy = from.height / to.height;
   const side = Math.sign(dx) || 1;
   const p = spring({ from: 0, to: 1, stiffness, damping, precision: 0.002 });
-  const frame = ([t]) => {
-    const k = 1 - t;
-    const air = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); // 0 → 1 → 0
-    const swell = 1 + air * 0.06;
-    const w = (sx + (1 - sx) * t) * swell;
-    const h = (sy + (1 - sy) * t) * swell;
+  const frame = ([k]) => {
+    const rest = 1 - k;
+    const air = Math.sin(Math.min(1, Math.max(0, k)) * Math.PI); // 0 → 1 → 0
+    const swell = 1 + air * 0.05;
     clone.style.transform =
-      `translate(${dx * k}px, ${dy * k + arc * air}px) rotate(${(-side * lean * air).toFixed(2)}deg) scale(${w}, ${h})`;
-    clone.style.filter = `drop-shadow(0 ${(18 * air).toFixed(1)}px ${(22 * air).toFixed(1)}px rgba(0,0,0,${(0.35 * air).toFixed(2)}))`;
+      `translate(${dx * rest}px, ${dy * rest + arc * air}px) rotate(${(-side * lean * air).toFixed(2)}deg) scale(${(sx + (1 - sx) * k) * swell}, ${(sy + (1 - sy) * k) * swell})`;
   };
   frame([0]);
-  return run([p], frame).done.then(() => clone.remove());
+  return run([p], frame).done.then(() => {
+    onLand?.();
+    clone.remove();
+  });
 }
 
-function visibleHeroImage() {
-  return lighting() === "night" ? els.night : els.day;
-}
+const visibleHeroImage = () => (isNight() ? els.night : els.day);
 
 async function entrance() {
   if (reduced()) return;
@@ -272,10 +401,8 @@ function setupTilt() {
   els.heroButton.addEventListener("pointermove", (e) => {
     if (!finePointer() || reduced() || state.busy) return;
     const r = els.heroButton.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width - 0.5;
-    const py = (e.clientY - r.top) / r.height - 0.5;
-    rx.target = -py * 12;
-    ry.target = px * 14;
+    rx.target = -((e.clientY - r.top) / r.height - 0.5) * 12;
+    ry.target = ((e.clientX - r.left) / r.width - 0.5) * 14;
     kick();
   });
   els.heroButton.addEventListener("pointerleave", () => {
@@ -285,29 +412,10 @@ function setupTilt() {
   });
 }
 
-// ---------------------------------------------------------------- interactions
-
-async function chooseEdition(edition) {
-  if (later(() => chooseEdition(edition))) return;
-  if (edition === state.edition) return;
-  state.edition = edition;
-  if (reduced() || state.view !== "hero") return render();
-  state.busy = true;
-  // Turn the model like a cardboard cut-out: away, swap the pictures, spring back.
-  await els.flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)" }], { duration: 200, easing: "cubic-bezier(.5,0,.9,.5)" }).finished;
-  render();
-  await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
-  if (edition === "halloween") burst();
-  const r = spring({ from: -90, to: 0, stiffness: 180, damping: 15, precision: 0.1 });
-  await run([r], ([deg]) => (els.flip.style.transform = `rotateY(${deg}deg)`)).done;
-  els.flip.style.transform = "";
-  settle();
-}
-
 // A handful of tiny pumpkins and sparks pop out of the building and fall.
 const PUMPKIN = '<svg viewBox="0 0 24 24"><path d="M12 6c-1-2 0-4 2-4" fill="none" stroke="#3b5a1f" stroke-width="2" stroke-linecap="round"/><path d="M12 6.5c-2.2-1.2-5-.9-6.8.8C3.4 9 3 12.3 4 15.2c1.1 3.4 4.4 5.3 8 5.3s6.9-1.9 8-5.3c1-2.9.6-6.2-1.2-7.9-1.8-1.7-4.6-2-6.8-.8z" fill="#ec7a1c"/></svg>';
 function burst() {
-  if (reduced()) return;
+  if (reduced() || state.view !== "hero") return;
   const r = els.heroButton.getBoundingClientRect();
   const ox = r.left + r.width / 2;
   const oy = r.top + r.height * 0.72;
@@ -327,9 +435,9 @@ function burst() {
     const T = 0.9 + Math.random() * 0.5;
     const frames = [];
     for (let k = 0; k <= 10; k++) {
-      const t = (k / 10) * T;
+      const s = (k / 10) * T;
       frames.push({
-        transform: `translate(${vx * t}px, ${vy * t + 0.5 * g * t * t}px) rotate(${(vx / 4) * t}deg) scale(${1 - (k / 10) * 0.4})`,
+        transform: `translate(${vx * s}px, ${vy * s + 0.5 * g * s * s}px) rotate(${(vx / 4) * s}deg) scale(${1 - (k / 10) * 0.4})`,
         opacity: k < 7 ? 1 : 1 - (k - 6) / 4,
       });
     }
@@ -337,38 +445,44 @@ function burst() {
   }
 }
 
-function step(direction) {
-  // Count from where we are heading, so quick repeated presses add up.
+// ------------------------------------------------------------ navigation
+
+// dir +1 moves right (toward newer places), -1 moves left (toward older ones); it wraps.
+function step(dir) {
+  const n = state.checkins.length;
+  if (n < 2) return;
   const from = state.pending ?? state.heading ?? state.index;
-  return goTo(Math.min(state.checkins.length - 1, Math.max(0, from + direction)));
+  return goTo(stepIndex(from, dir, n), dir);
 }
 
-async function goTo(next) {
+async function goTo(next, dir) {
   if (state.view !== "hero" || next < 0 || next >= state.checkins.length) return;
   if (state.busy) {
     // Remember the latest request and go there as soon as the current move ends.
     state.pending = next;
+    state.pendingDir = dir;
     return;
   }
   if (next === state.index) return;
-  const direction = next > state.index ? 1 : -1;
   state.busy = true;
   state.heading = next;
+  const target = state.checkins[next];
+  const ready = ensureLoaded(heroUrls(target), 700);
   if (!reduced()) {
-    els.caption.animate([{ opacity: 1 }, { opacity: 0, transform: `translateX(${-direction * 12}px)` }], { duration: 160, easing: "ease-in", fill: "forwards" });
+    els.caption.animate([{ opacity: 1 }, { opacity: 0, transform: `translateX(${-dir * 12}px)` }], { duration: 160, easing: "ease-in", fill: "forwards" });
     await els.flip.animate(
-      [{ transform: "none", opacity: 1, filter: "none" }, { transform: `translateX(${-direction * 70}px) rotateY(${direction * 18}deg) scale(.92)`, opacity: 0, filter: "blur(4px)" }],
+      [{ transform: "none", opacity: 1, filter: "none" }, { transform: `translateX(${-dir * 70}px) rotateY(${dir * 18}deg) scale(.92)`, opacity: 0, filter: "blur(4px)" }],
       { duration: 190, easing: "cubic-bezier(.5,0,.75,0)" },
     ).finished;
   }
+  await ready;
   state.index = next;
   render();
   if (!reduced()) {
-    await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
     els.caption.getAnimations().forEach((a) => a.cancel());
     riseCaption(0);
-    const x = spring({ from: direction * 70, to: 0, stiffness: 210, damping: 19, precision: 0.3 });
-    const r = spring({ from: -direction * 18, to: 0, stiffness: 210, damping: 17, precision: 0.1 });
+    const x = spring({ from: dir * 70, to: 0, stiffness: 210, damping: 19, precision: 0.3 });
+    const r = spring({ from: -dir * 18, to: 0, stiffness: 210, damping: 17, precision: 0.1 });
     const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26, precision: 0.01 });
     await run([x, r, o], ([dx, deg, op]) => {
       els.flip.style.transform = `translateX(${dx}px) rotateY(${deg}deg)`;
@@ -378,42 +492,12 @@ async function goTo(next) {
     els.flip.style.opacity = "";
   }
   state.heading = null;
-  if (state.pending !== null && state.pending !== undefined) {
+  if (state.pending !== null) {
     const pending = state.pending;
     state.pending = null;
     state.busy = false;
-    goTo(pending);
+    goTo(pending, state.pendingDir);
   } else settle();
-}
-
-function centerCell(li, behavior = "instant") {
-  if (state.view !== "strip" || !li) return;
-  const left = li.offsetLeft + li.offsetWidth / 2 - els.grid.clientWidth / 2;
-  els.grid.scrollTo({ left, behavior: reduced() ? "instant" : behavior });
-}
-
-// Strip depth: the picture nearest the middle is full size, neighbours shrink and fade.
-let depthFrame = 0;
-function updateDepth() {
-  if (depthFrame) return;
-  depthFrame = requestAnimationFrame(() => {
-    depthFrame = 0;
-    const cells = [...els.grid.children];
-    if (state.view !== "strip" || reduced()) {
-      cells.forEach((c) => c.style.removeProperty("--depth"));
-      return;
-    }
-    const mid = els.grid.getBoundingClientRect().left + els.grid.clientWidth / 2;
-    for (const cell of cells) {
-      const r = cell.getBoundingClientRect();
-      const offset = (r.left + r.width / 2 - mid) / r.width;
-      const { scale, opacity, tilt, shift } = depthFor(offset);
-      cell.style.setProperty("--depth", scale.toFixed(3));
-      cell.style.setProperty("--fade", opacity.toFixed(3));
-      cell.style.setProperty("--tilt", `${tilt.toFixed(2)}deg`);
-      cell.style.setProperty("--shift", `${shift.toFixed(1)}px`);
-    }
-  });
 }
 
 async function openShelf(mode = "strip") {
@@ -421,22 +505,28 @@ async function openShelf(mode = "strip") {
   if (!state.checkins.length) return;
   if (state.view !== "hero") return switchShelf(mode);
   state.busy = true;
-  state.returnTo = "hero";
+  // Everything the new view shows is decoded before anything changes on screen.
+  await ensureLoaded(urlsForMode(isNight()), 800);
+
+  // ---- one synchronous swap: no frame is painted between these lines ----
   const from = visibleHeroImage().getBoundingClientRect();
   state.view = mode;
+  state.returnTo = "hero";
   els.stage.hidden = true;
   els.shelf.hidden = false;
   render();
-  const landing = els.grid.querySelector(`[data-cell="${state.index}"]`);
+  const landing = mode === "strip" ? homeCell(state.index) : els.grid.querySelector(`[data-cell="${state.index}"]`);
   centerCell(landing);
+  applyDepth();
   const target = landing?.querySelector("img");
   if (!reduced() && target) {
-    // Measure where the picture will land before anything starts moving.
     const to = target.getBoundingClientRect();
     target.style.visibility = "hidden";
-    const order = [...els.grid.children];
-    const at = order.indexOf(landing);
-    order.forEach((cell, k) => {
+    const cells = [...els.grid.children];
+    const at = cells.indexOf(landing);
+    cells.forEach((cell, k) => {
+      const gap = Math.abs(k - at);
+      if (mode === "strip" && gap > 5) return; // off screen
       const side = Math.sign(k - at);
       const frames =
         cell === landing
@@ -444,12 +534,11 @@ async function openShelf(mode = "strip") {
           : mode === "strip"
             ? [{ opacity: 0, translate: `${side * 60}px 0` }, { opacity: 1, translate: "0 0" }]
             : [{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }];
-      cell.animate(frames, { duration: 520, delay: 60 + Math.abs(k - at) * 45, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
+      cell.animate(frames, { duration: 520, delay: 60 + gap * 45, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
     });
-    await flyClone(target, from, to);
-    target.style.visibility = "";
+    await flyClone(target, from, to, { onLand: () => (target.style.visibility = "") });
   }
-  landing?.querySelector("button")?.focus({ preventScroll: true });
+  focusIfKeyboard(landing?.querySelector("button"));
   settle();
 }
 
@@ -458,27 +547,50 @@ async function switchShelf(mode) {
   if (later(() => switchShelf(mode))) return;
   if (mode === state.view) return;
   state.busy = true;
+  if (state.view === "strip") {
+    const c = nearestCell();
+    if (c) state.index = Number(c.dataset.cell);
+  }
   if (!reduced()) await els.grid.animate([{ opacity: 1 }, { opacity: 0, transform: "scale(.98)" }], { duration: 160, easing: "ease-in" }).finished;
   state.view = mode;
   render();
-  const landing = els.grid.querySelector(`[data-cell="${state.index}"]`);
+  const landing = mode === "strip" ? homeCell(state.index) : els.grid.querySelector(`[data-cell="${state.index}"]`);
   centerCell(landing);
+  applyDepth();
   if (!reduced()) {
     [...els.grid.children].forEach((cell, k) =>
-      cell.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 380, delay: k * 30, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }),
+      cell.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 380, delay: Math.min(k, 12) * 30, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }),
     );
   }
-  landing?.querySelector("button")?.focus({ preventScroll: true });
+  focusIfKeyboard(landing?.querySelector("button"));
   settle();
 }
 
-async function closeShelf(index = state.index) {
-  if (later(() => closeShelf(index))) return;
+// Close the strip/grid. A tapped picture is passed in; with nothing passed (empty
+// space, Esc) the strip returns to the picture in its middle, the grid to the one
+// you came from.
+async function closeShelf(index, fromImg) {
+  if (later(() => closeShelf(index, fromImg))) return;
   if (state.view === "hero") return;
   state.busy = true;
-  const thumb = els.grid.querySelector(`[data-cell="${index}"] img`);
-  const from = thumb?.getBoundingClientRect();
-  state.index = index;
+  let pick = index;
+  let source = fromImg;
+  if (pick === undefined) {
+    if (state.view === "strip") {
+      const c = nearestCell();
+      pick = Number(c.dataset.cell);
+      source = c.querySelector("img");
+    } else {
+      pick = state.index;
+      source = els.grid.querySelector(`[data-cell="${pick}"] img`);
+    }
+  }
+  // Decode the big pictures while the shelf is still on screen.
+  await ensureLoaded(heroUrls(state.checkins[pick]), 800);
+
+  // ---- one synchronous swap ----
+  const from = source?.getBoundingClientRect();
+  state.index = pick;
   state.view = "hero";
   els.shelf.hidden = true;
   els.stage.hidden = false;
@@ -486,21 +598,14 @@ async function closeShelf(index = state.index) {
   const img = visibleHeroImage();
   if (!reduced() && from) {
     els.flip.style.visibility = "hidden";
-    await img.decode?.().catch(() => {});
-    await flyClone(img, from, img.getBoundingClientRect(), { duration: 600 });
-    els.flip.style.visibility = "";
+    await flyClone(img, from, img.getBoundingClientRect(), { onLand: () => (els.flip.style.visibility = "") });
   }
-  els.heroButton.focus({ preventScroll: true });
+  focusIfKeyboard(els.heroButton);
   settle();
 }
 
-// Sideways scrolling for mouse users: drag with the button held, or use the wheel.
+// ------------------------------------------------------------ mouse drag and momentum in the strip
 const drag = { active: false, moved: false, startX: 0, startLeft: 0, samples: [] };
-function nearestCell() {
-  const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
-  return [...els.grid.children].reduce((best, c) =>
-    Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(best.offsetLeft + best.offsetWidth / 2 - mid) ? c : best);
-}
 function glide(velocity) {
   // Coast with friction, then settle on the nearest picture.
   let v = velocity;
@@ -512,15 +617,20 @@ function glide(velocity) {
     const before = els.grid.scrollLeft;
     els.grid.scrollLeft -= v * dt;
     const stuck = els.grid.scrollLeft === before;
-    if (Math.abs(v) > 40 && !stuck && !drag.active) return requestAnimationFrame(tick);
+    if (Math.abs(v) > 40 && !stuck && !drag.active && state.view === "strip") return requestAnimationFrame(tick);
     els.grid.classList.remove("dragging");
     centerCell(nearestCell(), "smooth");
   };
   requestAnimationFrame(tick);
 }
 function setupShelfScrolling() {
-  els.grid.addEventListener("scroll", updateDepth, { passive: true });
-  addEventListener("resize", updateDepth);
+  els.grid.addEventListener("scroll", onGridScroll, { passive: true });
+  addEventListener("resize", () => {
+    if (state.view === "strip") {
+      centerCell(nearestCell());
+      applyDepth();
+    }
+  });
   els.grid.addEventListener("wheel", (e) => {
     if (state.view !== "strip" || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
     e.preventDefault();
@@ -559,46 +669,37 @@ function setupShelfScrolling() {
   });
 }
 
-function stripStep(direction) {
-  const cells = [...els.grid.children];
-  const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
-  let at = 0;
-  cells.forEach((c, k) => {
-    if (Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(cells[at].offsetLeft + cells[at].offsetWidth / 2 - mid)) at = k;
-  });
-  const next = cells[Math.min(cells.length - 1, Math.max(0, at + direction))];
-  centerCell(next, "smooth");
-  next?.querySelector("button")?.focus({ preventScroll: true });
-}
+// ------------------------------------------------------------ the two modes
 
-function toggleScheme(event) {
-  const next = root.dataset.scheme === "dark" ? "light" : "dark";
+async function setMode(night, event) {
+  const x0 = event?.clientX || els.scheme.getBoundingClientRect().left + els.scheme.offsetWidth / 2;
+  const y0 = event?.clientY || els.scheme.getBoundingClientRect().top + els.scheme.offsetHeight / 2;
+  // Pictures of the new mode are decoded first, so the switch never shows a gap.
+  await ensureLoaded(urlsForMode(night), 900);
   const apply = () => {
-    root.dataset.scheme = next;
-    render();
+    root.dataset.scheme = night ? "dark" : "light";
+    mood.set(night, { reducedMotion: reduced() });
+    rerender();
   };
   if (reduced() || !document.startViewTransition) return apply();
-  const r = els.scheme.getBoundingClientRect();
-  const x = event?.clientX || r.left + r.width / 2;
-  const y = event?.clientY || r.top + r.height / 2;
-  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const radius = Math.hypot(Math.max(x0, innerWidth - x0), Math.max(y0, innerHeight - y0));
   const transition = document.startViewTransition(apply);
   transition.ready.then(() => {
     root.animate(
-      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { clipPath: [`circle(0px at ${x0}px ${y0}px)`, `circle(${radius}px at ${x0}px ${y0}px)`] },
       { duration: 700, easing: "cubic-bezier(.2,.7,.1,1)", pseudoElement: "::view-transition-new(root)" },
     );
   }).catch(() => {});
+  if (night) setTimeout(burst, 480);
 }
 
 async function share() {
   const checkin = current();
   if (!checkin) return;
-  const { variant } = pickVariant(checkin, state.edition);
-  const url = variant[lighting()];
+  const variant = variantFor(checkin, isNight());
   const name = shareFileName(checkin, variant.theme, lighting());
   try {
-    const blob = await loadImageBlob(url);
+    const blob = await loadImageBlob(variant[lighting()]);
     const file = new File([blob], name, { type: "image/png" });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: checkin.place?.name ?? checkin.text });
@@ -616,7 +717,7 @@ async function share() {
   }
 }
 
-// ---------------------------------------------------------------- boot
+// ------------------------------------------------------------ boot
 
 const mood = createMood(document.body);
 
@@ -624,25 +725,26 @@ els.heroButton.addEventListener("click", () => openShelf("strip"));
 // Top right: show everything at once; press again to go back to where you were.
 els.expand.addEventListener("click", () => {
   if (state.view === "grid") return state.returnTo === "strip" ? switchShelf("strip") : closeShelf();
-  state.returnTo = state.view;
+  if (state.view === "strip") {
+    state.returnTo = "strip";
+    return switchShelf("grid");
+  }
   openShelf("grid");
 });
-// No back button: tap a picture, tap the empty space around them, or press Esc.
+// No back button: tap a picture, tap any empty space, or press Esc.
 document.addEventListener("click", (e) => {
   if (state.view === "hero" || drag.moved || !(e.target instanceof Element)) return;
-  // Pictures, buttons and links keep their own meaning; everything else is empty space.
   if (e.target.closest(".cell, button, a, .mood-layer")) return;
   closeShelf();
 });
-els.scheme.addEventListener("click", toggleScheme);
+els.scheme.addEventListener("click", (e) => {
+  sessionStorage.setItem("scheme-chosen", "1");
+  setMode(!isNight(), e);
+});
 els.share.addEventListener("click", share);
 els.lang.addEventListener("click", () => {
   state.lang = state.lang === "en" ? "zh" : "en";
-  render();
-});
-els.mood.addEventListener("click", () => {
-  const on = mood.toggle({ reducedMotion: reduced() });
-  els.mood.setAttribute("aria-pressed", String(on));
+  rerender();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && state.view !== "hero") closeShelf();
@@ -656,14 +758,10 @@ document.addEventListener("keydown", (e) => {
   }
 });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
-  if (!sessionStorage.getItem("scheme-chosen")) {
-    root.dataset.scheme = e.matches ? "dark" : "light";
-    render();
-  }
+  if (!sessionStorage.getItem("scheme-chosen")) setMode(e.matches);
 });
-els.scheme.addEventListener("click", () => sessionStorage.setItem("scheme-chosen", "1"));
 
-// Swipe left/right on touch screens.
+// Swipe left/right on the big picture: left reveals the place to the right (newer).
 let touchX = null;
 els.heroButton.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
 els.heroButton.addEventListener("touchend", (e) => {
@@ -676,6 +774,17 @@ els.heroButton.addEventListener("touchend", (e) => {
 setupTilt();
 setupShelfScrolling();
 renderChrome();
+
+// Warm the other pictures quietly, one at a time, after the first screen is up.
+function warmUp() {
+  const urls = [...urlsForMode(isNight()), ...urlsForMode(!isNight())];
+  let i = 0;
+  const next = () => {
+    if (i >= urls.length) return;
+    ensureLoaded([urls[i++]], 4000).then(() => setTimeout(next, 120));
+  };
+  setTimeout(next, 600);
+}
 
 async function boot() {
   els.status.hidden = false;
@@ -699,6 +808,8 @@ async function boot() {
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
   if (!reduced()) els.flip.style.opacity = "0";
   root.dataset.ready = "true";
+  if (isNight()) mood.set(true, { reducedMotion: reduced() }); // night is the Halloween look
   entrance();
+  warmUp();
 }
 boot();

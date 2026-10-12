@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { caption, depthFor, editionsOf, mapsUrl, pickVariant, relativeTime, shareFileName, shortDate, sortCheckins } from "../src/lib/view.js";
+import { caption, depthFor, loopShift, mapsUrl, modeEdition, nearestTo, pickVariant, relativeTime, shareFileName, shortDate, sortCheckins, stepIndex } from "../src/lib/view.js";
 import { run, spring } from "../src/lib/spring.js";
 
 const NOW = Date.parse("2026-10-12T10:00:00Z");
@@ -49,13 +49,46 @@ test("relative time", () => {
 test("edition choice never invents a variant and reports unavailability", () => {
   const both = ck({ variants: [v("normal"), v("halloween")] });
   assert.equal(pickVariant(both, "halloween").variant.theme, "halloween");
-  assert.deepEqual(editionsOf(both), ["normal", "halloween"]);
   const normalOnly = pickVariant(ck(), "halloween");
   assert.equal(normalOnly.available, false);
   assert.equal(normalOnly.variant.theme, "normal");
   const halloweenOnly = pickVariant(ck({ variants: [v("halloween")] }), "normal");
   assert.equal(halloweenOnly.variant.theme, "halloween");
   assert.equal(halloweenOnly.available, false);
+});
+
+test("two modes: day shows the normal edition, night the Halloween edition with a safe fallback", () => {
+  assert.equal(modeEdition(false), "normal");
+  assert.equal(modeEdition(true), "halloween");
+  const both = ck({ variants: [v("normal"), v("halloween")] });
+  assert.equal(pickVariant(both, modeEdition(true)).variant.theme, "halloween");
+  assert.equal(pickVariant(both, modeEdition(false)).variant.theme, "normal");
+  // a place without a Halloween edition still shows its (normal) night picture at night
+  const plain = pickVariant(ck(), modeEdition(true));
+  assert.equal(plain.variant.theme, "normal");
+  assert.equal(plain.variant.night, "/media/normal/night.png");
+});
+
+test("moving through places wraps in both directions (index 0 is the newest)", () => {
+  assert.equal(stepIndex(3, 1, 7), 2, "right → newer");
+  assert.equal(stepIndex(3, -1, 7), 4, "left → older");
+  assert.equal(stepIndex(0, 1, 7), 6, "right of the newest wraps to the oldest");
+  assert.equal(stepIndex(6, -1, 7), 0, "left of the oldest wraps to the newest");
+  assert.equal(stepIndex(0, 1, 1), 0);
+  assert.equal(stepIndex(0, 1, 0), 0);
+});
+
+test("the picture nearest the middle is the one chosen when the strip closes", () => {
+  assert.equal(nearestTo([100, 380, 660, 940], 600), 2);
+  assert.equal(nearestTo([100, 380, 660, 940], 0), 0);
+  assert.equal(nearestTo([], 5), -1);
+  assert.equal(nearestTo([10, 30], 20), 0, "ties keep the first");
+});
+
+test("looping jumps by whole periods back to the home copy", () => {
+  assert.equal(loopShift(2, 2, 1400), 0);
+  assert.equal(loopShift(3, 2, 1400), -1400);
+  assert.equal(loopShift(0, 2, 1400), 2800);
 });
 
 test("sorting is newest first, using the capture time when known", () => {
@@ -158,6 +191,16 @@ test("the mood module touches no data and record text is never parsed as HTML", 
   assert.equal((mood.match(/innerHTML/g) ?? []).length, 2);
   assert.equal((app.match(/innerHTML/g) ?? []).length, 1);
   assert.match(app, /bit\.innerHTML = PUMPKIN;/);
+});
+
+test("closing the strip returns to the centred picture, and swaps wait for decoded pictures", () => {
+  const app = read("scripts/app.js");
+  const close = app.slice(app.indexOf("async function closeShelf"), app.indexOf("// ------------------------------------------------------------ mouse drag"));
+  assert.match(close, /nearestCell\(\)/, "no index given → the picture in the middle");
+  assert.ok(close.indexOf("await ensureLoaded") < close.indexOf("els.shelf.hidden = true"), "decode first, then swap");
+  const open = app.slice(app.indexOf("async function openShelf"), app.indexOf("// Strip ↔ grid"));
+  assert.ok(open.indexOf("await ensureLoaded") < open.indexOf("els.stage.hidden = true"));
+  assert.ok(!/filter\s*=/.test(app.slice(app.indexOf("function flyClone"), app.indexOf("const visibleHeroImage"))), "no shadow filter on the flying picture");
 });
 
 test("edition and scheme changes re-render from memory; only boot loads the list", () => {

@@ -2,8 +2,6 @@
 // *what* is shown (caption wording, time semantics, edition fallback) lives
 // here so it can be unit-tested.
 
-export const EDITIONS = ["normal", "halloween"];
-
 export const STRINGS = {
   en: {
     spotted: "Spotted at",
@@ -18,14 +16,7 @@ export const STRINGS = {
     share: "Share",
     shared: "Saved",
     all: (n) => `Show all ${n} places`,
-    normal: "Normal",
-    halloween: "Halloween",
-    noEdition: (e) => `No ${e} edition for this place yet.`,
-    toDark: "Night",
-    toLight: "Day",
-    schemeLabel: (night) => (night ? "Switch to day" : "Switch to night"),
-    mood: "Mood",
-    moodLabel: "Halloween mood (decoration only)",
+    schemeLabel: (night) => (night ? "Switch to day" : "Switch to night (Halloween)"),
     lang: "中文",
     langLabel: "切换到中文",
     empty: "Nothing here yet.",
@@ -49,14 +40,7 @@ export const STRINGS = {
     share: "分享",
     shared: "已保存",
     all: (n) => `展开全部 ${n} 个地点`,
-    normal: "普通",
-    halloween: "万圣节",
-    noEdition: (e) => `这个地方还没有${e}版。`,
-    toDark: "夜晚",
-    toLight: "白天",
-    schemeLabel: (night) => (night ? "切换到白天" : "切换到夜晚"),
-    mood: "氛围",
-    moodLabel: "万圣节氛围（仅装饰）",
+    schemeLabel: (night) => (night ? "切换到白天" : "切换到夜晚（万圣节）"),
     lang: "EN",
     langLabel: "Switch to English",
     empty: "这里还没有内容。",
@@ -104,10 +88,6 @@ export function pickVariant(checkin, edition) {
   if (exact) return { variant: exact, available: true };
   const fallback = checkin.variants.find((v) => v.theme === "normal") ?? checkin.variants[0] ?? null;
   return { variant: fallback, available: false };
-}
-
-export function editionsOf(checkin) {
-  return EDITIONS.filter((e) => checkin.variants.some((v) => v.theme === e));
 }
 
 /**
@@ -180,4 +160,38 @@ export function depthFor(offset) {
     // Labels drift a little against the motion for depth.
     shift: -offset * 10 * Math.min(1, d),
   };
+}
+
+/** Night shows the Halloween edition (when a place has one), day shows the normal edition. */
+export function modeEdition(night) {
+  return night ? "halloween" : "normal";
+}
+
+/**
+ * Next index when moving through places that wrap around.
+ * `dir` +1 moves right, toward newer places; -1 moves left, toward older ones.
+ * Index 0 is the newest place.
+ */
+export function stepIndex(index, dir, count) {
+  if (count <= 0) return 0;
+  return dir > 0 ? (index - 1 + count) % count : (index + 1) % count;
+}
+
+/** Index of the value closest to `target` (first one wins a tie). -1 for an empty list. */
+export function nearestTo(values, target) {
+  let best = -1;
+  let distance = Infinity;
+  values.forEach((v, i) => {
+    const d = Math.abs(v - target);
+    if (d < distance) {
+      distance = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** How far to move the scroll position to land on the home copy of a looped list. */
+export function loopShift(copy, home, period) {
+  return (home - copy) * period;
 }

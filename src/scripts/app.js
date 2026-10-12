@@ -20,7 +20,10 @@ const els = {
   note: $("[data-note]"),
   editions: $("[data-editions]"),
   share: $("[data-share]"),
-  all: $("[data-all]"),
+  expand: $("[data-expand]"),
+  expandCount: $("[data-expand-count]"),
+  stripWrap: $("[data-strip-wrap]"),
+  strip: $("[data-strip]"),
   shelf: $("[data-shelf]"),
   grid: $("[data-grid]"),
   back: $("[data-back]"),
@@ -67,7 +70,10 @@ function renderChrome() {
   els.back.textContent = s.back;
   els.share.textContent = s.share;
   els.foot.textContent = s.footnote;
-  els.all.textContent = s.all(state.checkins.length);
+  els.expand.setAttribute("aria-label", s.all(state.checkins.length));
+  els.expand.title = s.all(state.checkins.length);
+  els.expandCount.textContent = String(state.checkins.length);
+  els.expand.hidden = state.checkins.length < 2;
 }
 
 function setPictures(variant, checkin) {
@@ -117,6 +123,103 @@ function renderHero() {
   els.note.textContent = available ? "" : t().noEdition(t()[state.edition]);
 }
 
+// The strip: every place as a small picture you can scroll sideways.
+// Built once per data load; later renders only update pictures and the selection.
+function buildStrip() {
+  els.strip.replaceChildren();
+  // The marker lives inside the scrolling list, so it scrolls with the pictures.
+  els.stripDot = el("li", { class: "strip-dot", "aria-hidden": "true", role: "presentation" });
+  state.checkins.forEach((checkin, i) => {
+    const name = checkin.place?.name ?? checkin.text;
+    const li = el("li");
+    const button = el("button", { type: "button", class: "strip-item", "data-strip-index": String(i), "aria-label": t().view(name) });
+    button.append(el("img", { alt: "", width: "120", height: "120", decoding: "async", loading: i < 8 ? "eager" : "lazy" }));
+    button.addEventListener("click", () => {
+      if (stripDrag.moved) return;
+      goTo(i);
+    });
+    li.append(button);
+    els.strip.append(li);
+  });
+  els.strip.append(els.stripDot);
+  els.stripWrap.hidden = state.checkins.length < 2;
+}
+
+function renderStrip({ scroll = "smooth" } = {}) {
+  if (els.stripWrap.hidden) return;
+  const buttons = [...els.strip.querySelectorAll(".strip-item")];
+  if (!buttons.length) return;
+  buttons.forEach((button, i) => {
+    const { variant } = pickVariant(state.checkins[i], state.edition);
+    const img = button.querySelector("img");
+    const src = variant[lighting()];
+    if (img.getAttribute("src") !== src) img.src = src;
+    if (i === state.index) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+    button.setAttribute("aria-label", t().view(state.checkins[i].place?.name ?? state.checkins[i].text));
+  });
+  const active = buttons[state.index];
+  if (!active) return;
+  // Keep the current place in the middle of the strip, and slide the marker under it.
+  const target = active.offsetLeft + active.offsetWidth / 2 - els.strip.clientWidth / 2;
+  els.strip.scrollTo({ left: target, behavior: reduced() || scroll === "instant" ? "instant" : "smooth" });
+  moveDot(active, scroll === "instant");
+}
+
+const dotX = spring({ stiffness: 260, damping: 24 });
+const dotW = spring({ stiffness: 260, damping: 24 });
+let dotLoop = null;
+function moveDot(active, instant) {
+  // offsetLeft is measured inside the list's content box, independent of scrolling.
+  dotX.target = active.offsetLeft + active.offsetWidth / 2;
+  const apply = ([x, w]) => {
+    els.stripDot.style.transform = `translateX(${(x - w / 2).toFixed(1)}px)`;
+    els.stripDot.style.width = `${w.toFixed(1)}px`;
+  };
+  if (instant || reduced()) {
+    dotX.snap();
+    dotW.snap();
+    return apply([dotX.value, 18]);
+  }
+  dotW.target = 18;
+  if (!dotLoop) {
+    // Stretch while travelling, like a drop of ink.
+    dotLoop = run([dotX, dotW], ([x]) => apply([x, 18 + Math.min(26, Math.abs(dotX.velocity) / 60)]));
+    dotLoop.done.then(() => (dotLoop = null));
+  }
+}
+
+// Desktop: drag the strip with the mouse and let a vertical wheel scroll it sideways.
+const stripDrag = { active: false, moved: false, startX: 0, startLeft: 0 };
+function setupStrip() {
+  els.strip.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    els.strip.scrollLeft += e.deltaY;
+  }, { passive: false });
+  els.strip.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    Object.assign(stripDrag, { active: true, moved: false, startX: e.clientX, startLeft: els.strip.scrollLeft });
+  });
+  addEventListener("pointermove", (e) => {
+    if (!stripDrag.active) return;
+    const dx = e.clientX - stripDrag.startX;
+    if (Math.abs(dx) > 4) {
+      stripDrag.moved = true;
+      els.strip.classList.add("dragging");
+    }
+    els.strip.scrollLeft = stripDrag.startLeft - dx;
+  });
+  addEventListener("pointerup", () => {
+    if (!stripDrag.active) return;
+    stripDrag.active = false;
+    els.strip.classList.remove("dragging");
+    // Let the click that ends a drag be ignored, then reset.
+    setTimeout(() => (stripDrag.moved = false), 0);
+  });
+  addEventListener("resize", () => renderStrip({ scroll: "instant" }));
+}
+
 function renderShelf() {
   els.grid.replaceChildren();
   state.checkins.forEach((checkin, i) => {
@@ -135,8 +238,10 @@ function renderShelf() {
 
 function render() {
   renderChrome();
-  if (state.view === "hero") renderHero();
-  else renderShelf();
+  if (state.view === "hero") {
+    renderHero();
+    renderStrip();
+  } else renderShelf();
 }
 
 // ---------------------------------------------------------------- motion helpers
@@ -243,9 +348,13 @@ async function chooseEdition(edition) {
   state.busy = false;
 }
 
-async function step(direction) {
-  const next = state.index + direction;
-  if (state.view !== "hero" || state.busy || next < 0 || next >= state.checkins.length) return;
+function step(direction) {
+  return goTo(state.index + direction);
+}
+
+async function goTo(next) {
+  if (state.view !== "hero" || state.busy || next === state.index || next < 0 || next >= state.checkins.length) return;
+  const direction = next > state.index ? 1 : -1;
   state.busy = true;
   if (!reduced()) {
     await els.flip.animate([{ transform: "none", opacity: 1 }, { transform: `translateX(${-direction * 60}px) scale(.94)`, opacity: 0 }], { duration: 180, easing: "ease-in" }).finished;
@@ -253,6 +362,7 @@ async function step(direction) {
   state.index = next;
   render();
   if (!reduced()) {
+    await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
     const x = spring({ from: direction * 60, to: 0, stiffness: 200, damping: 20 });
     const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26 });
     await run([x, o], ([dx, op]) => {
@@ -272,7 +382,7 @@ async function openShelf() {
   state.view = "shelf";
   els.stage.hidden = true;
   els.shelf.hidden = false;
-  els.all.setAttribute("aria-expanded", "true");
+  els.expand.setAttribute("aria-expanded", "true");
   render();
   const target = els.grid.querySelector(`[data-index="${state.index}"] img`);
   const cells = [...els.grid.children];
@@ -306,7 +416,7 @@ async function closeShelf(index = state.index) {
   state.view = "hero";
   els.shelf.hidden = true;
   els.stage.hidden = false;
-  els.all.setAttribute("aria-expanded", "false");
+  els.expand.setAttribute("aria-expanded", "false");
   render();
   const img = visibleHeroImage();
   if (!reduced() && from) {
@@ -369,7 +479,7 @@ async function share() {
 const mood = createMood(document.body);
 
 els.heroButton.addEventListener("click", openShelf);
-els.all.addEventListener("click", openShelf);
+els.expand.addEventListener("click", () => (state.view === "shelf" ? closeShelf() : openShelf()));
 els.back.addEventListener("click", () => closeShelf());
 els.scheme.addEventListener("click", toggleScheme);
 els.share.addEventListener("click", share);
@@ -397,8 +507,8 @@ els.scheme.addEventListener("click", () => sessionStorage.setItem("scheme-chosen
 
 // Swipe left/right on touch screens.
 let touchX = null;
-els.stage.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
-els.stage.addEventListener("touchend", (e) => {
+els.heroButton.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
+els.heroButton.addEventListener("touchend", (e) => {
   if (touchX === null) return;
   const dx = e.changedTouches[0].clientX - touchX;
   touchX = null;
@@ -406,6 +516,7 @@ els.stage.addEventListener("touchend", (e) => {
 });
 
 setupTilt();
+setupStrip();
 renderChrome();
 
 async function boot() {
@@ -426,7 +537,9 @@ async function boot() {
   }
   els.status.hidden = true;
   els.stage.hidden = false;
+  buildStrip();
   render();
+  renderStrip({ scroll: "instant" });
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
   if (!reduced()) els.flip.style.opacity = "0";
   root.dataset.ready = "true";

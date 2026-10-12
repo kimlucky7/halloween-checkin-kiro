@@ -29,9 +29,11 @@ import Page from "../layouts/Page.astro";
       </div>
       <div class="row quiet">
         <button type="button" class="text-button" data-share>Share</button>
-        <span class="divider" aria-hidden="true">·</span>
-        <button type="button" class="text-button" data-all aria-expanded="false" aria-controls="shelf">All places</button>
       </div>
+
+      <nav class="strip-wrap" data-strip-wrap aria-label="Places" hidden>
+        <ul class="strip" data-strip></ul>
+      </nav>
     </section>
 
     <section class="shelf" id="shelf" data-shelf aria-label="All places" hidden>
@@ -39,6 +41,12 @@ import Page from "../layouts/Page.astro";
       <button type="button" class="chip back" data-back>Back</button>
     </section>
 
+    <div class="corner top-right">
+      <button type="button" class="chip icon" data-expand aria-expanded="false" aria-controls="shelf" hidden>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><g fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="2"/><rect x="11" y="2" width="7" height="7" rx="2"/><rect x="2" y="11" width="7" height="7" rx="2"/><rect x="11" y="11" width="7" height="7" rx="2"/></g></svg>
+        <span data-expand-count></span>
+      </button>
+    </div>
     <div class="corner left">
       <button type="button" class="chip" data-scheme-toggle>Night</button>
     </div>

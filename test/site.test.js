@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { caption, editionsOf, mapsUrl, pickVariant, relativeTime, shareFileName, sortCheckins } from "../src/lib/view.js";
+import { caption, depthFor, editionsOf, mapsUrl, pickVariant, relativeTime, shareFileName, shortDate, sortCheckins } from "../src/lib/view.js";
 import { run, spring } from "../src/lib/spring.js";
 
 const NOW = Date.parse("2026-10-12T10:00:00Z");
@@ -70,6 +70,18 @@ test("map links use only stated facts; file names are sanitised", () => {
   assert.match(mapsUrl({ name: "Cafe", address: "1 Road" }), /query=Cafe%2C%201%20Road$/);
   assert.match(mapsUrl({ name: "Cafe", lat: 3.1, lng: 101.7 }), /query=3\.1%2C101\.7$/);
   assert.equal(shareFileName({ id: "ck-1/../x" }, "halloween", "night"), "halloween-checkin-ck-1x-halloween-night.png");
+});
+
+test("strip depth: centred picture is full size, neighbours shrink and fade, far ones stay visible", () => {
+  assert.deepEqual(depthFor(0), { scale: 1, opacity: 1 });
+  assert.ok(depthFor(1).scale < 1 && depthFor(-1).scale === depthFor(1).scale);
+  assert.ok(depthFor(10).opacity > 0.4 && depthFor(10).scale >= 0.79);
+});
+
+test("short dates", () => {
+  assert.equal(shortDate("2026-09-03T10:51:43Z", "en"), "Sep 3, 2026");
+  assert.match(shortDate("2026-09-03T10:51:43Z", "zh"), /2026年9月3日/);
+  assert.equal(shortDate("nope"), "");
 });
 
 // ---- spring

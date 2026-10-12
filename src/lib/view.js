@@ -160,3 +160,18 @@ export function shareFileName(checkin, edition, lighting) {
   const safe = String(checkin.id).replace(/[^a-z0-9-]/gi, "").slice(0, 40) || "checkin";
   return `halloween-checkin-${safe}-${edition}-${lighting}.png`;
 }
+
+export function shortDate(iso, lang = "en") {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "";
+  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en", { month: "short", day: "numeric", year: "numeric" }).format(ms);
+}
+
+/**
+ * How large and how opaque a picture in the strip is, from its distance to the
+ * middle measured in picture widths (0 = centred).
+ */
+export function depthFor(offset) {
+  const d = Math.min(Math.abs(offset), 2);
+  return { scale: 1 - Math.min(d, 1.5) * 0.14, opacity: 1 - d * 0.28 };
+}

@@ -1,7 +1,7 @@
-// Site behaviour and motion (v2: strip navigation). Reads data only through ./data.js; decides what to
+// Site behaviour and motion. Reads data only through ./data.js; decides what to
 // show only through ../lib/view.js. Record text is always inserted with
 // textContent, never parsed as HTML.
-import { caption, editionsOf, pickVariant, shareFileName, sortCheckins, STRINGS } from "../lib/view.js";
+import { caption, depthFor, editionsOf, pickVariant, shareFileName, shortDate, sortCheckins, STRINGS } from "../lib/view.js";
 import { run, spring } from "../lib/spring.js";
 import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
@@ -23,8 +23,6 @@ const els = {
   share: $("[data-share]"),
   expand: $("[data-expand]"),
   expandCount: $("[data-expand-count]"),
-  stripWrap: $("[data-strip-wrap]"),
-  strip: $("[data-strip]"),
   shelf: $("[data-shelf]"),
   grid: $("[data-grid]"),
   back: $("[data-back]"),
@@ -43,6 +41,7 @@ const state = {
   view: "hero",
   busy: false,
   pending: null,
+  returnTo: "hero",
   heading: null,
 };
 
@@ -95,7 +94,11 @@ function renderCaption(checkin) {
     else if (part.kind === "place" && part.href) {
       els.caption.append(el("a", { class: "soft", href: part.href, target: "_blank", rel: "noopener noreferrer" }, part.value));
     } else if (part.kind === "time") {
-      els.caption.append(el("time", { class: "soft", datetime: part.datetime, title: part.title }, part.value));
+      // Like a timeline: the time opens the row of all places.
+      const b = el("button", { type: "button", class: "soft time-button", "aria-label": t().all(state.checkins.length), "data-open-strip": "" });
+      b.append(el("time", { datetime: part.datetime, title: part.title }, part.value));
+      b.addEventListener("click", () => openShelf("strip"));
+      els.caption.append(b);
     } else els.caption.append(el("span", { class: "soft" }, part.value));
   }
 }
@@ -126,125 +129,44 @@ function renderHero() {
   els.note.textContent = available ? "" : t().noEdition(t()[state.edition]);
 }
 
-// The strip: every place as a small picture you can scroll sideways.
-// Built once per data load; later renders only update pictures and the selection.
-function buildStrip() {
-  els.strip.replaceChildren();
-  // The marker lives inside the scrolling list, so it scrolls with the pictures.
-  els.stripDot = el("li", { class: "strip-dot", "aria-hidden": "true", role: "presentation" });
-  state.checkins.forEach((checkin, i) => {
-    const name = checkin.place?.name ?? checkin.text;
-    const li = el("li");
-    const button = el("button", { type: "button", class: "strip-item", "data-strip-index": String(i), "aria-label": t().view(name) });
-    button.append(el("img", { alt: "", width: "120", height: "120", decoding: "async", loading: i < 8 ? "eager" : "lazy" }));
-    button.addEventListener("click", () => {
-      if (stripDrag.moved) return;
-      goTo(i);
-    });
-    li.append(button);
-    els.strip.append(li);
-  });
-  els.strip.append(els.stripDot);
-  els.stripWrap.hidden = state.checkins.length < 2;
-}
-
-function renderStrip({ scroll = "smooth" } = {}) {
-  if (els.stripWrap.hidden) return;
-  const buttons = [...els.strip.querySelectorAll(".strip-item")];
-  if (!buttons.length) return;
-  buttons.forEach((button, i) => {
-    const { variant } = pickVariant(state.checkins[i], state.edition);
-    const img = button.querySelector("img");
-    const src = variant[lighting()];
-    if (img.getAttribute("src") !== src) img.src = src;
-    if (i === state.index) button.setAttribute("aria-current", "true");
-    else button.removeAttribute("aria-current");
-    button.setAttribute("aria-label", t().view(state.checkins[i].place?.name ?? state.checkins[i].text));
-  });
-  const active = buttons[state.index];
-  if (!active) return;
-  // Keep the current place in the middle of the strip, and slide the marker under it.
-  const target = active.offsetLeft + active.offsetWidth / 2 - els.strip.clientWidth / 2;
-  els.strip.scrollTo({ left: target, behavior: reduced() || scroll === "instant" ? "instant" : "smooth" });
-  moveDot(active, scroll === "instant");
-}
-
-const dotX = spring({ stiffness: 260, damping: 24, precision: 0.3 });
-const dotW = spring({ stiffness: 260, damping: 24, precision: 0.3 });
-let dotLoop = null;
-function moveDot(active, instant) {
-  // offsetLeft is measured inside the list's content box, independent of scrolling.
-  dotX.target = active.offsetLeft + active.offsetWidth / 2;
-  const apply = ([x, w]) => {
-    els.stripDot.style.transform = `translateX(${(x - w / 2).toFixed(1)}px)`;
-    els.stripDot.style.width = `${w.toFixed(1)}px`;
-  };
-  if (instant || reduced()) {
-    dotX.snap();
-    dotW.snap();
-    return apply([dotX.value, 18]);
-  }
-  dotW.target = 18;
-  if (!dotLoop) {
-    // Stretch while travelling, like a drop of ink.
-    dotLoop = run([dotX, dotW], ([x]) => apply([x, 18 + Math.min(26, Math.abs(dotX.velocity) / 60)]));
-    dotLoop.done.then(() => (dotLoop = null));
-  }
-}
-
-// Desktop: drag the strip with the mouse and let a vertical wheel scroll it sideways.
-const stripDrag = { active: false, moved: false, startX: 0, startLeft: 0 };
-function setupStrip() {
-  els.strip.addEventListener("wheel", (e) => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    els.strip.scrollLeft += e.deltaY;
-  }, { passive: false });
-  els.strip.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse" || e.button !== 0) return;
-    Object.assign(stripDrag, { active: true, moved: false, startX: e.clientX, startLeft: els.strip.scrollLeft });
-  });
-  addEventListener("pointermove", (e) => {
-    if (!stripDrag.active) return;
-    const dx = e.clientX - stripDrag.startX;
-    if (Math.abs(dx) > 4) {
-      stripDrag.moved = true;
-      els.strip.classList.add("dragging");
-    }
-    els.strip.scrollLeft = stripDrag.startLeft - dx;
-  });
-  addEventListener("pointerup", () => {
-    if (!stripDrag.active) return;
-    stripDrag.active = false;
-    els.strip.classList.remove("dragging");
-    // Let the click that ends a drag be ignored, then reset.
-    setTimeout(() => (stripDrag.moved = false), 0);
-  });
-  addEventListener("resize", () => renderStrip({ scroll: "instant" }));
+// Two ways to see every place:
+//  - "strip": one row you swipe sideways, oldest on the left and the newest on the
+//    right, the picture in the middle shown largest;
+//  - "grid": everything at once, newest first.
+function shelfOrder() {
+  const order = state.checkins.map((_, i) => i);
+  return state.view === "strip" ? order.reverse() : order;
 }
 
 function renderShelf() {
+  els.shelf.dataset.mode = state.view;
   els.grid.replaceChildren();
-  state.checkins.forEach((checkin, i) => {
+  for (const i of shelfOrder()) {
+    const checkin = state.checkins[i];
     const { variant } = pickVariant(checkin, state.edition);
     const name = checkin.place?.name ?? checkin.text;
-    const when = (checkin.capturedAt ?? checkin.publishedAt).slice(0, 10);
-    const li = el("li", { class: "cell" });
+    const li = el("li", { class: "cell", "data-cell": String(i) });
     const button = el("button", { type: "button", class: "thumb", "aria-label": t().view(name), "data-index": String(i) });
-    const img = el("img", { src: variant[lighting()], alt: "", width: "240", height: "240", loading: "lazy", decoding: "async" });
-    button.append(img);
-    button.addEventListener("click", () => closeShelf(i));
-    li.append(el("p", { class: "when" }, when), button, el("p", { class: "name" }, name));
+    button.append(el("img", { src: variant[lighting()], alt: "", width: "360", height: "360", loading: "lazy", decoding: "async" }));
+    button.addEventListener("click", () => {
+      if (drag.moved) return;
+      closeShelf(i);
+    });
+    li.append(el("p", { class: "when" }, shortDate(checkin.capturedAt ?? checkin.publishedAt, state.lang)), button, el("p", { class: "name" }, name));
     els.grid.append(li);
-  });
+  }
+  els.expand.setAttribute("aria-expanded", String(state.view === "grid"));
 }
 
 function render() {
   renderChrome();
   if (state.view === "hero") {
     renderHero();
-    renderStrip();
-  } else renderShelf();
+    els.expand.setAttribute("aria-expanded", "false");
+  } else {
+    renderShelf();
+    updateDepth();
+  }
 }
 
 // ---------------------------------------------------------------- motion helpers
@@ -393,48 +315,96 @@ async function goTo(next) {
   }
 }
 
-async function openShelf() {
-  if (state.busy || state.view === "shelf" || !state.checkins.length) return;
+function centerCell(li, behavior = "instant") {
+  if (state.view !== "strip" || !li) return;
+  const left = li.offsetLeft + li.offsetWidth / 2 - els.grid.clientWidth / 2;
+  els.grid.scrollTo({ left, behavior: reduced() ? "instant" : behavior });
+}
+
+// Strip depth: the picture nearest the middle is full size, neighbours shrink and fade.
+let depthFrame = 0;
+function updateDepth() {
+  if (depthFrame) return;
+  depthFrame = requestAnimationFrame(() => {
+    depthFrame = 0;
+    const cells = [...els.grid.children];
+    if (state.view !== "strip" || reduced()) {
+      cells.forEach((c) => c.style.removeProperty("--depth"));
+      return;
+    }
+    const mid = els.grid.getBoundingClientRect().left + els.grid.clientWidth / 2;
+    for (const cell of cells) {
+      const r = cell.getBoundingClientRect();
+      const { scale, opacity } = depthFor((r.left + r.width / 2 - mid) / r.width);
+      cell.style.setProperty("--depth", scale.toFixed(3));
+      cell.style.setProperty("--fade", opacity.toFixed(3));
+    }
+  });
+}
+
+async function openShelf(mode = "strip") {
+  if (state.busy || !state.checkins.length) return;
+  if (state.view !== "hero") return switchShelf(mode);
   state.busy = true;
+  state.returnTo = "hero";
   const from = visibleHeroImage().getBoundingClientRect();
-  state.view = "shelf";
+  state.view = mode;
   els.stage.hidden = true;
   els.shelf.hidden = false;
-  els.expand.setAttribute("aria-expanded", "true");
   render();
-  const target = els.grid.querySelector(`[data-index="${state.index}"] img`);
-  const cells = [...els.grid.children];
+  const landing = els.grid.querySelector(`[data-cell="${state.index}"]`);
+  centerCell(landing);
+  const target = landing?.querySelector("img");
   if (!reduced() && target) {
-    // Measure the landing spot before anything in the grid starts moving.
+    // Measure where the picture will land before anything starts moving.
     const to = target.getBoundingClientRect();
     target.style.visibility = "hidden";
-    const landing = target.closest("li");
-    cells.forEach((cell, i) => {
-      const moving = cell !== landing;
-      cell.animate(
-        moving
-          ? [{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }]
-          : [{ opacity: 0 }, { opacity: 1 }],
-        { duration: 420, delay: 80 + i * 35, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
-      );
+    const order = [...els.grid.children];
+    const at = order.indexOf(landing);
+    order.forEach((cell, k) => {
+      const side = Math.sign(k - at);
+      const frames =
+        cell === landing
+          ? [{ opacity: 0 }, { opacity: 1 }]
+          : mode === "strip"
+            ? [{ opacity: 0, translate: `${side * 60}px 0` }, { opacity: 1, translate: "0 0" }]
+            : [{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }];
+      cell.animate(frames, { duration: 520, delay: 60 + Math.abs(k - at) * 45, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
     });
     await flyClone(target, from, to);
     target.style.visibility = "";
   }
-  els.shelf.querySelector(`[data-index="${state.index}"]`)?.focus({ preventScroll: true });
+  landing?.querySelector("button")?.focus({ preventScroll: true });
+  state.busy = false;
+}
+
+// Strip ↔ grid without going back to the big picture.
+async function switchShelf(mode) {
+  if (mode === state.view) return;
+  state.busy = true;
+  if (!reduced()) await els.grid.animate([{ opacity: 1 }, { opacity: 0, transform: "scale(.98)" }], { duration: 160, easing: "ease-in" }).finished;
+  state.view = mode;
+  render();
+  const landing = els.grid.querySelector(`[data-cell="${state.index}"]`);
+  centerCell(landing);
+  if (!reduced()) {
+    [...els.grid.children].forEach((cell, k) =>
+      cell.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 380, delay: k * 30, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }),
+    );
+  }
+  landing?.querySelector("button")?.focus({ preventScroll: true });
   state.busy = false;
 }
 
 async function closeShelf(index = state.index) {
-  if (state.busy || state.view !== "shelf") return;
+  if (state.busy || state.view === "hero") return;
   state.busy = true;
-  const thumb = els.grid.querySelector(`[data-index="${index}"] img`);
+  const thumb = els.grid.querySelector(`[data-cell="${index}"] img`);
   const from = thumb?.getBoundingClientRect();
   state.index = index;
   state.view = "hero";
   els.shelf.hidden = true;
   els.stage.hidden = false;
-  els.expand.setAttribute("aria-expanded", "false");
   render();
   const img = visibleHeroImage();
   if (!reduced() && from) {
@@ -445,6 +415,57 @@ async function closeShelf(index = state.index) {
   }
   els.heroButton.focus({ preventScroll: true });
   state.busy = false;
+}
+
+// Sideways scrolling for mouse users: drag with the button held, or use the wheel.
+const drag = { active: false, moved: false, startX: 0, startLeft: 0 };
+function setupShelfScrolling() {
+  els.grid.addEventListener("scroll", updateDepth, { passive: true });
+  addEventListener("resize", updateDepth);
+  els.grid.addEventListener("wheel", (e) => {
+    if (state.view !== "strip" || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    els.grid.scrollLeft += e.deltaY;
+  }, { passive: false });
+  els.grid.addEventListener("pointerdown", (e) => {
+    if (state.view !== "strip" || e.pointerType !== "mouse" || e.button !== 0) return;
+    Object.assign(drag, { active: true, moved: false, startX: e.clientX, startLeft: els.grid.scrollLeft });
+  });
+  addEventListener("pointermove", (e) => {
+    if (!drag.active) return;
+    const dx = e.clientX - drag.startX;
+    if (Math.abs(dx) > 4 && !drag.moved) {
+      drag.moved = true;
+      els.grid.classList.add("dragging");
+    }
+    if (drag.moved) els.grid.scrollLeft = drag.startLeft - dx;
+  });
+  addEventListener("pointerup", () => {
+    if (!drag.active) return;
+    drag.active = false;
+    if (drag.moved) {
+      els.grid.classList.remove("dragging");
+      // Settle on the nearest picture.
+      const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
+      const nearest = [...els.grid.children].reduce((best, c) =>
+        Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(best.offsetLeft + best.offsetWidth / 2 - mid) ? c : best);
+      centerCell(nearest, "smooth");
+    }
+    // The click that ends a drag must not open a picture.
+    setTimeout(() => (drag.moved = false), 0);
+  });
+}
+
+function stripStep(direction) {
+  const cells = [...els.grid.children];
+  const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
+  let at = 0;
+  cells.forEach((c, k) => {
+    if (Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(cells[at].offsetLeft + cells[at].offsetWidth / 2 - mid)) at = k;
+  });
+  const next = cells[Math.min(cells.length - 1, Math.max(0, at + direction))];
+  centerCell(next, "smooth");
+  next?.querySelector("button")?.focus({ preventScroll: true });
 }
 
 function toggleScheme(event) {
@@ -496,8 +517,13 @@ async function share() {
 
 const mood = createMood(document.body);
 
-els.heroButton.addEventListener("click", openShelf);
-els.expand.addEventListener("click", () => (state.view === "shelf" ? closeShelf() : openShelf()));
+els.heroButton.addEventListener("click", () => openShelf("strip"));
+// Top right: show everything at once; press again to go back to where you were.
+els.expand.addEventListener("click", () => {
+  if (state.view === "grid") return state.returnTo === "strip" ? switchShelf("strip") : closeShelf();
+  state.returnTo = state.view;
+  openShelf("grid");
+});
 els.back.addEventListener("click", () => closeShelf());
 els.scheme.addEventListener("click", toggleScheme);
 els.share.addEventListener("click", share);
@@ -510,10 +536,15 @@ els.mood.addEventListener("click", () => {
   els.mood.setAttribute("aria-pressed", String(on));
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && state.view === "shelf") closeShelf();
+  if (e.key === "Escape" && state.view !== "hero") closeShelf();
   if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
-  if (e.key === "ArrowRight") step(1);
-  if (e.key === "ArrowLeft") step(-1);
+  const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  if (!dir) return;
+  if (state.view === "hero") step(dir);
+  else if (state.view === "strip") {
+    e.preventDefault();
+    stripStep(dir);
+  }
 });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
   if (!sessionStorage.getItem("scheme-chosen")) {
@@ -534,7 +565,7 @@ els.heroButton.addEventListener("touchend", (e) => {
 });
 
 setupTilt();
-setupStrip();
+setupShelfScrolling();
 renderChrome();
 
 async function boot() {
@@ -555,9 +586,7 @@ async function boot() {
   }
   els.status.hidden = true;
   els.stage.hidden = false;
-  buildStrip();
   render();
-  renderStrip({ scroll: "instant" });
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
   if (!reduced()) els.flip.style.opacity = "0";
   root.dataset.ready = "true";

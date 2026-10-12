@@ -7,6 +7,7 @@ import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
 
 const root = document.documentElement;
+root.dataset.app = "2"; // bump when a cached broken bundle must be bypassed
 const $ = (sel) => document.querySelector(sel);
 const els = {
   stage: $("[data-stage]"),

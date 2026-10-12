@@ -145,9 +145,10 @@ export function createMood(root) {
     spider.innerHTML = `<span class="thread"></span>${SPIDER}`;
     layer.append(spider);
 
-    for (let i = 0; i < 3; i++) {
+    const narrow = innerWidth < 520;
+    for (let i = 0; i < (narrow ? 2 : 3); i++) {
       const g = ghost("drifter");
-      g.style.setProperty("--size", `${rand(38, 64).toFixed(0)}px`);
+      g.style.setProperty("--size", `${(narrow ? rand(28, 38) : rand(38, 64)).toFixed(0)}px`);
       layer.append(g);
       if (!reducedMotion) {
         animations.push(g.animate(hauntKeyframes(i % 2 ? 1 : -1), { duration: rand(18000, 28000), iterations: Infinity, delay: -rand(0, 20000) }));

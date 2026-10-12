@@ -166,6 +166,10 @@ a.soft:hover { color: var(--ink); }
 .thumb { display: block; width: 100%; border-radius: 1rem; transition: transform 0.35s var(--ease-out); }
 .thumb:hover { transform: translateY(-4px) scale(1.03); }
 .thumb:active { transform: scale(0.97); transition-duration: 0.12s; }
+/* Keyboard focus in the strip and grid: a soft ring under the picture instead of a box. */
+.thumb:focus-visible { outline: none; }
+.thumb:focus-visible img { filter: drop-shadow(0 0 0.6rem color-mix(in srgb, var(--ring) 70%, transparent)); }
+.cell:has(.thumb:focus-visible) .name { color: var(--ring); }
 .thumb img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
 .shelf[data-mode="grid"] { padding-top: 3.25rem; }
 

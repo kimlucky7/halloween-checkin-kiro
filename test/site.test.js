@@ -73,9 +73,12 @@ test("map links use only stated facts; file names are sanitised", () => {
 });
 
 test("strip depth: centred picture is full size, neighbours shrink and fade, far ones stay visible", () => {
-  assert.deepEqual(depthFor(0), { scale: 1, opacity: 1 });
+  assert.deepEqual({ ...depthFor(0), tilt: depthFor(0).tilt + 0, shift: depthFor(0).shift + 0 }, { scale: 1, opacity: 1, tilt: 0, shift: 0 });
   assert.ok(depthFor(1).scale < 1 && depthFor(-1).scale === depthFor(1).scale);
   assert.ok(depthFor(10).opacity > 0.4 && depthFor(10).scale >= 0.79);
+  assert.equal(depthFor(0).tilt + 0, 0);
+  assert.ok(depthFor(1).tilt < 0 && depthFor(-1).tilt > 0, "both sides turn toward the middle");
+  assert.equal(Math.abs(depthFor(5).tilt), Math.abs(depthFor(1.2).tilt), "tilt is capped");
 });
 
 test("short dates", () => {
@@ -150,9 +153,11 @@ test("the mood module touches no data and record text is never parsed as HTML", 
   const mood = read("scripts/mood.js");
   assert.ok(!/import/.test(mood), "mood is self-contained");
   const app = read("scripts/app.js");
-  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|document\.write/.test(app));
-  // The only innerHTML use in mood.js is the static bat SVG and the static fog markup.
+  assert.ok(!/insertAdjacentHTML|outerHTML|document\.write/.test(app));
+  // innerHTML is only ever given static markup: the bat and fog in mood.js, the pumpkin in app.js.
   assert.equal((mood.match(/innerHTML/g) ?? []).length, 2);
+  assert.equal((app.match(/innerHTML/g) ?? []).length, 1);
+  assert.match(app, /bit\.innerHTML = PUMPKIN;/);
 });
 
 test("edition and scheme changes re-render from memory; only boot loads the list", () => {

@@ -171,5 +171,13 @@ export function shortDate(iso, lang = "en") {
  */
 export function depthFor(offset) {
   const d = Math.min(Math.abs(offset), 2);
-  return { scale: 1 - Math.min(d, 1.5) * 0.14, opacity: 1 - d * 0.28 };
+  const side = Math.sign(offset);
+  return {
+    scale: 1 - Math.min(d, 1.5) * 0.14,
+    opacity: 1 - d * 0.28,
+    // Turn slightly toward the middle, like pictures on a curved shelf.
+    tilt: -side * Math.min(d, 1.2) * 14,
+    // Labels drift a little against the motion for depth.
+    shift: -offset * 10 * Math.min(1, d),
+  };
 }

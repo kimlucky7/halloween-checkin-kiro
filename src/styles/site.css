@@ -116,6 +116,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 
 @keyframes float { 50% { translate: 0 -6px; } }
+/* Pressing the model squashes it a little; it springs back on release. */
+.hero .tilt { transition: scale 0.5s cubic-bezier(.3,1.6,.5,1); }
+.hero:active .tilt { scale: 0.96; transition-duration: 0.12s; }
+
+.bit { position: fixed; z-index: 45; pointer-events: none; margin: -6px 0 0 -6px; }
+.bit.spark { width: 6px; height: 6px; border-radius: 50%; background: #ffb35c; box-shadow: 0 0 10px 3px rgba(255, 150, 60, 0.6); }
+.bit.pumpkin-bit { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+.bit.pumpkin-bit svg { display: block; width: 100%; height: 100%; }
 @keyframes breathe { 50% { transform: translateX(-50%) scale(0.9); opacity: 0.75; } }
 
 .caption { font-size: 1.2rem; line-height: 1.5; margin-top: 0.4rem; text-wrap: balance; }
@@ -157,6 +165,7 @@ a.soft:hover { color: var(--ink); }
 .name { font-size: 0.85rem; margin-top: 0.15rem; }
 .thumb { display: block; width: 100%; border-radius: 1rem; transition: transform 0.35s var(--ease-out); }
 .thumb:hover { transform: translateY(-4px) scale(1.03); }
+.thumb:active { transform: scale(0.97); transition-duration: 0.12s; }
 .thumb img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; pointer-events: none; -webkit-user-drag: none; }
 .shelf[data-mode="grid"] { padding-top: 3.25rem; }
 
@@ -182,14 +191,17 @@ a.soft:hover { color: var(--ink); }
 }
 .shelf[data-mode="strip"] .grid::-webkit-scrollbar { display: none; }
 .shelf[data-mode="strip"] .grid.dragging { cursor: grabbing; scroll-snap-type: none; }
+.shelf[data-mode="strip"] .grid { perspective: 1100px; }
 .shelf[data-mode="strip"] .cell {
   flex: 0 0 var(--item);
   width: var(--item);
   scroll-snap-align: center;
-  transform: scale(var(--depth, 1));
+  transform: rotateY(var(--tilt, 0deg)) scale(var(--depth, 1));
   opacity: var(--fade, 1);
   will-change: transform, opacity;
 }
+.shelf[data-mode="strip"] .when,
+.shelf[data-mode="strip"] .name { translate: var(--shift, 0) 0; }
 .shelf[data-mode="strip"] .when { font-size: 1rem; margin-bottom: 0.6rem; }
 .shelf[data-mode="strip"] .name { font-size: 1.05rem; margin-top: 0.6rem; text-wrap: balance; }
 .shelf[data-mode="strip"] .thumb:hover { transform: translateY(-4px); }

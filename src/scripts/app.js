@@ -44,6 +44,20 @@ const state = {
   heading: null,
 };
 
+// While an animation runs, the latest requested action waits and runs right after.
+let queued = null;
+function later(action) {
+  if (!state.busy) return false;
+  queued = action;
+  return true;
+}
+function settle() {
+  state.busy = false;
+  const next = queued;
+  queued = null;
+  next?.();
+}
+
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const finePointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
 const lighting = () => (root.dataset.scheme === "dark" ? "night" : "day");
@@ -169,7 +183,10 @@ function render() {
 
 // ---------------------------------------------------------------- motion helpers
 
-function flyClone(img, from, to, { duration = 560 } = {}) {
+// Shared-element flight between the big picture and the strip/grid.
+// Driven by a spring, so it lands with a small overshoot; travels on an arc,
+// swells slightly and casts a growing shadow while in the air.
+function flyClone(img, from, to, { arc = -36, lean = 4, stiffness = 190, damping = 21 } = {}) {
   const clone = img.cloneNode();
   clone.removeAttribute("loading");
   clone.style.cssText = ""; // the source may be hidden while it is being flown to
@@ -183,21 +200,27 @@ function flyClone(img, from, to, { duration = 560 } = {}) {
     zIndex: "40",
     pointerEvents: "none",
     transformOrigin: "0 0",
+    willChange: "transform, filter",
   });
   document.body.append(clone);
   const dx = from.left - to.left;
   const dy = from.top - to.top;
   const sx = from.width / to.width;
   const sy = from.height / to.height;
-  const anim = clone.animate(
-    [
-      { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
-      { transform: `translate(${dx * 0.35}px, ${dy * 0.35 - 18}px) scale(${(sx + 1) / 2 * 1.04}, ${(sy + 1) / 2 * 1.04})`, offset: 0.55 },
-      { transform: "none" },
-    ],
-    { duration, easing: "cubic-bezier(.2,.8,.2,1)" },
-  );
-  return anim.finished.then(() => clone.remove(), () => clone.remove());
+  const side = Math.sign(dx) || 1;
+  const p = spring({ from: 0, to: 1, stiffness, damping, precision: 0.002 });
+  const frame = ([t]) => {
+    const k = 1 - t;
+    const air = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); // 0 → 1 → 0
+    const swell = 1 + air * 0.06;
+    const w = (sx + (1 - sx) * t) * swell;
+    const h = (sy + (1 - sy) * t) * swell;
+    clone.style.transform =
+      `translate(${dx * k}px, ${dy * k + arc * air}px) rotate(${(-side * lean * air).toFixed(2)}deg) scale(${w}, ${h})`;
+    clone.style.filter = `drop-shadow(0 ${(18 * air).toFixed(1)}px ${(22 * air).toFixed(1)}px rgba(0,0,0,${(0.35 * air).toFixed(2)}))`;
+  };
+  frame([0]);
+  return run([p], frame).done.then(() => clone.remove());
 }
 
 function visibleHeroImage() {
@@ -215,10 +238,18 @@ async function entrance() {
   }).done;
   els.flip.style.transform = "";
   els.flip.style.opacity = "";
-  // Caption words rise in one after another.
-  [...els.caption.childNodes].forEach((node, i) => {
-    if (node.nodeType === 1) node.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 60 + i * 45, easing: "ease-out", fill: "backwards" });
-  });
+  riseCaption();
+}
+
+// The caption's parts rise in one after another.
+function riseCaption(delay = 60) {
+  if (reduced()) return;
+  [...els.caption.children].forEach((node, i) =>
+    node.animate(
+      [{ opacity: 0, transform: "translateY(8px)", filter: "blur(3px)" }, { opacity: 1, transform: "none", filter: "none" }],
+      { duration: 460, delay: delay + i * 55, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
+    ),
+  );
 }
 
 // Tilt toward the pointer with a sheen that follows it, sprung so it eases back.
@@ -257,7 +288,8 @@ function setupTilt() {
 // ---------------------------------------------------------------- interactions
 
 async function chooseEdition(edition) {
-  if (edition === state.edition || state.busy) return;
+  if (later(() => chooseEdition(edition))) return;
+  if (edition === state.edition) return;
   state.edition = edition;
   if (reduced() || state.view !== "hero") return render();
   state.busy = true;
@@ -265,10 +297,44 @@ async function chooseEdition(edition) {
   await els.flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)" }], { duration: 200, easing: "cubic-bezier(.5,0,.9,.5)" }).finished;
   render();
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
+  if (edition === "halloween") burst();
   const r = spring({ from: -90, to: 0, stiffness: 180, damping: 15, precision: 0.1 });
   await run([r], ([deg]) => (els.flip.style.transform = `rotateY(${deg}deg)`)).done;
   els.flip.style.transform = "";
-  state.busy = false;
+  settle();
+}
+
+// A handful of tiny pumpkins and sparks pop out of the building and fall.
+const PUMPKIN = '<svg viewBox="0 0 24 24"><path d="M12 6c-1-2 0-4 2-4" fill="none" stroke="#3b5a1f" stroke-width="2" stroke-linecap="round"/><path d="M12 6.5c-2.2-1.2-5-.9-6.8.8C3.4 9 3 12.3 4 15.2c1.1 3.4 4.4 5.3 8 5.3s6.9-1.9 8-5.3c1-2.9.6-6.2-1.2-7.9-1.8-1.7-4.6-2-6.8-.8z" fill="#ec7a1c"/></svg>';
+function burst() {
+  if (reduced()) return;
+  const r = els.heroButton.getBoundingClientRect();
+  const ox = r.left + r.width / 2;
+  const oy = r.top + r.height * 0.72;
+  for (let i = 0; i < 16; i++) {
+    const bit = document.createElement("span");
+    const pumpkin = i % 3 === 0;
+    bit.className = pumpkin ? "bit pumpkin-bit" : "bit spark";
+    if (pumpkin) bit.innerHTML = PUMPKIN; // static markup, no data
+    bit.style.left = `${ox}px`;
+    bit.style.top = `${oy}px`;
+    document.body.append(bit);
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+    const speed = 160 + Math.random() * 220;
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+    const g = 900;
+    const T = 0.9 + Math.random() * 0.5;
+    const frames = [];
+    for (let k = 0; k <= 10; k++) {
+      const t = (k / 10) * T;
+      frames.push({
+        transform: `translate(${vx * t}px, ${vy * t + 0.5 * g * t * t}px) rotate(${(vx / 4) * t}deg) scale(${1 - (k / 10) * 0.4})`,
+        opacity: k < 7 ? 1 : 1 - (k - 6) / 4,
+      });
+    }
+    bit.animate(frames, { duration: T * 1000, easing: "linear" }).finished.then(() => bit.remove());
+  }
 }
 
 function step(direction) {
@@ -289,28 +355,35 @@ async function goTo(next) {
   state.busy = true;
   state.heading = next;
   if (!reduced()) {
-    await els.flip.animate([{ transform: "none", opacity: 1 }, { transform: `translateX(${-direction * 60}px) scale(.94)`, opacity: 0 }], { duration: 180, easing: "ease-in" }).finished;
+    els.caption.animate([{ opacity: 1 }, { opacity: 0, transform: `translateX(${-direction * 12}px)` }], { duration: 160, easing: "ease-in", fill: "forwards" });
+    await els.flip.animate(
+      [{ transform: "none", opacity: 1, filter: "none" }, { transform: `translateX(${-direction * 70}px) rotateY(${direction * 18}deg) scale(.92)`, opacity: 0, filter: "blur(4px)" }],
+      { duration: 190, easing: "cubic-bezier(.5,0,.75,0)" },
+    ).finished;
   }
   state.index = next;
   render();
   if (!reduced()) {
     await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
-    const x = spring({ from: direction * 60, to: 0, stiffness: 200, damping: 20, precision: 0.3 });
+    els.caption.getAnimations().forEach((a) => a.cancel());
+    riseCaption(0);
+    const x = spring({ from: direction * 70, to: 0, stiffness: 210, damping: 19, precision: 0.3 });
+    const r = spring({ from: -direction * 18, to: 0, stiffness: 210, damping: 17, precision: 0.1 });
     const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26, precision: 0.01 });
-    await run([x, o], ([dx, op]) => {
-      els.flip.style.transform = `translateX(${dx}px)`;
+    await run([x, r, o], ([dx, deg, op]) => {
+      els.flip.style.transform = `translateX(${dx}px) rotateY(${deg}deg)`;
       els.flip.style.opacity = String(Math.min(1, op));
     }).done;
     els.flip.style.transform = "";
     els.flip.style.opacity = "";
   }
-  state.busy = false;
   state.heading = null;
   if (state.pending !== null && state.pending !== undefined) {
     const pending = state.pending;
     state.pending = null;
+    state.busy = false;
     goTo(pending);
-  }
+  } else settle();
 }
 
 function centerCell(li, behavior = "instant") {
@@ -333,15 +406,19 @@ function updateDepth() {
     const mid = els.grid.getBoundingClientRect().left + els.grid.clientWidth / 2;
     for (const cell of cells) {
       const r = cell.getBoundingClientRect();
-      const { scale, opacity } = depthFor((r.left + r.width / 2 - mid) / r.width);
+      const offset = (r.left + r.width / 2 - mid) / r.width;
+      const { scale, opacity, tilt, shift } = depthFor(offset);
       cell.style.setProperty("--depth", scale.toFixed(3));
       cell.style.setProperty("--fade", opacity.toFixed(3));
+      cell.style.setProperty("--tilt", `${tilt.toFixed(2)}deg`);
+      cell.style.setProperty("--shift", `${shift.toFixed(1)}px`);
     }
   });
 }
 
 async function openShelf(mode = "strip") {
-  if (state.busy || !state.checkins.length) return;
+  if (later(() => openShelf(mode))) return;
+  if (!state.checkins.length) return;
   if (state.view !== "hero") return switchShelf(mode);
   state.busy = true;
   state.returnTo = "hero";
@@ -373,11 +450,12 @@ async function openShelf(mode = "strip") {
     target.style.visibility = "";
   }
   landing?.querySelector("button")?.focus({ preventScroll: true });
-  state.busy = false;
+  settle();
 }
 
 // Strip ↔ grid without going back to the big picture.
 async function switchShelf(mode) {
+  if (later(() => switchShelf(mode))) return;
   if (mode === state.view) return;
   state.busy = true;
   if (!reduced()) await els.grid.animate([{ opacity: 1 }, { opacity: 0, transform: "scale(.98)" }], { duration: 160, easing: "ease-in" }).finished;
@@ -391,11 +469,12 @@ async function switchShelf(mode) {
     );
   }
   landing?.querySelector("button")?.focus({ preventScroll: true });
-  state.busy = false;
+  settle();
 }
 
 async function closeShelf(index = state.index) {
-  if (state.busy || state.view === "hero") return;
+  if (later(() => closeShelf(index))) return;
+  if (state.view === "hero") return;
   state.busy = true;
   const thumb = els.grid.querySelector(`[data-cell="${index}"] img`);
   const from = thumb?.getBoundingClientRect();
@@ -412,11 +491,33 @@ async function closeShelf(index = state.index) {
     els.flip.style.visibility = "";
   }
   els.heroButton.focus({ preventScroll: true });
-  state.busy = false;
+  settle();
 }
 
 // Sideways scrolling for mouse users: drag with the button held, or use the wheel.
-const drag = { active: false, moved: false, startX: 0, startLeft: 0 };
+const drag = { active: false, moved: false, startX: 0, startLeft: 0, samples: [] };
+function nearestCell() {
+  const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
+  return [...els.grid.children].reduce((best, c) =>
+    Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(best.offsetLeft + best.offsetWidth / 2 - mid) ? c : best);
+}
+function glide(velocity) {
+  // Coast with friction, then settle on the nearest picture.
+  let v = velocity;
+  let last = performance.now();
+  const tick = (now) => {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    v *= Math.pow(0.04, dt); // keeps ~4% of its speed per second
+    const before = els.grid.scrollLeft;
+    els.grid.scrollLeft -= v * dt;
+    const stuck = els.grid.scrollLeft === before;
+    if (Math.abs(v) > 40 && !stuck && !drag.active) return requestAnimationFrame(tick);
+    els.grid.classList.remove("dragging");
+    centerCell(nearestCell(), "smooth");
+  };
+  requestAnimationFrame(tick);
+}
 function setupShelfScrolling() {
   els.grid.addEventListener("scroll", updateDepth, { passive: true });
   addEventListener("resize", updateDepth);
@@ -427,7 +528,7 @@ function setupShelfScrolling() {
   }, { passive: false });
   els.grid.addEventListener("pointerdown", (e) => {
     if (state.view !== "strip" || e.pointerType !== "mouse" || e.button !== 0) return;
-    Object.assign(drag, { active: true, moved: false, startX: e.clientX, startLeft: els.grid.scrollLeft });
+    Object.assign(drag, { active: true, moved: false, startX: e.clientX, startLeft: els.grid.scrollLeft, samples: [[e.timeStamp, e.clientX]] });
   });
   addEventListener("pointermove", (e) => {
     if (!drag.active) return;
@@ -436,18 +537,22 @@ function setupShelfScrolling() {
       drag.moved = true;
       els.grid.classList.add("dragging");
     }
-    if (drag.moved) els.grid.scrollLeft = drag.startLeft - dx;
+    if (!drag.moved) return;
+    els.grid.scrollLeft = drag.startLeft - dx;
+    drag.samples.push([e.timeStamp, e.clientX]);
+    if (drag.samples.length > 6) drag.samples.shift();
   });
   addEventListener("pointerup", () => {
     if (!drag.active) return;
     drag.active = false;
     if (drag.moved) {
-      els.grid.classList.remove("dragging");
-      // Settle on the nearest picture.
-      const mid = els.grid.scrollLeft + els.grid.clientWidth / 2;
-      const nearest = [...els.grid.children].reduce((best, c) =>
-        Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid) < Math.abs(best.offsetLeft + best.offsetWidth / 2 - mid) ? c : best);
-      centerCell(nearest, "smooth");
+      const [t0, x0] = drag.samples[0];
+      const [t1, x1] = drag.samples.at(-1);
+      const v = t1 > t0 ? ((x1 - x0) / (t1 - t0)) * 1000 : 0; // px per second
+      if (reduced()) {
+        els.grid.classList.remove("dragging");
+        centerCell(nearestCell());
+      } else glide(v);
     }
     // The click that ends a drag must not open a picture.
     setTimeout(() => (drag.moved = false), 0);

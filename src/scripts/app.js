@@ -51,7 +51,6 @@ const el = (tag, attrs = {}, text) => {
   if (text !== undefined) node.textContent = text;
   return node;
 };
-const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
 // ---------------------------------------------------------------- rendering
 
@@ -145,6 +144,7 @@ function render() {
 function flyClone(img, from, to, { duration = 560 } = {}) {
   const clone = img.cloneNode();
   clone.removeAttribute("loading");
+  clone.style.cssText = ""; // the source may be hidden while it is being flown to
   Object.assign(clone.style, {
     position: "fixed",
     left: `${to.left}px`,
@@ -277,12 +277,20 @@ async function openShelf() {
   const target = els.grid.querySelector(`[data-index="${state.index}"] img`);
   const cells = [...els.grid.children];
   if (!reduced() && target) {
+    // Measure the landing spot before anything in the grid starts moving.
+    const to = target.getBoundingClientRect();
     target.style.visibility = "hidden";
-    cells.forEach((cell, i) =>
-      cell.animate([{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 80 + i * 35, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }),
-    );
-    await nextFrame();
-    await flyClone(target, from, target.getBoundingClientRect());
+    const landing = target.closest("li");
+    cells.forEach((cell, i) => {
+      const moving = cell !== landing;
+      cell.animate(
+        moving
+          ? [{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }]
+          : [{ opacity: 0 }, { opacity: 1 }],
+        { duration: 420, delay: 80 + i * 35, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
+      );
+    });
+    await flyClone(target, from, to);
     target.style.visibility = "";
   }
   els.shelf.querySelector(`[data-index="${state.index}"]`)?.focus({ preventScroll: true });

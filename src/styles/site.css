@@ -207,7 +207,7 @@ time.soft[title] { text-decoration: underline dotted var(--faint); text-underlin
 @keyframes drift { to { transform: translateX(14%); } }
 
 .bat { position: absolute; left: 0; top: 0; width: var(--size); color: #2a1838; }
-:root[data-scheme="dark"] .bat { color: #08060c; filter: drop-shadow(0 0 6px rgba(255, 160, 80, 0.25)); }
+:root[data-scheme="dark"] .bat { color: #3a2a4d; filter: drop-shadow(0 0 5px rgba(255, 150, 70, 0.55)); }
 .bat svg { display: block; width: 100%; }
 .bat .wing { transform-box: fill-box; animation: flap var(--flap) ease-in-out infinite alternate; }
 .bat .wing.l { transform-origin: 100% 40%; }

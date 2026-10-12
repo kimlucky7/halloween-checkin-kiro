@@ -1,0 +1,239 @@
+/* Halloween Check-in — site styles. */
+
+:root {
+  --bg: #f7f6f2;
+  --ink: #1d1b19;
+  --soft: #8b867e;
+  --faint: #bdb8af;
+  --chip: #ebe8e1;
+  --chip-ink: #6f6a62;
+  --ring: #7c3aed;
+  --glow: rgba(255, 176, 92, 0);
+  --shadow: rgba(40, 30, 20, 0.22);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  color-scheme: light;
+}
+:root[data-scheme="dark"] {
+  --bg: #101014;
+  --ink: #efeef3;
+  --soft: #9c99a6;
+  --faint: #55525e;
+  --chip: #1f1e25;
+  --chip-ink: #a7a4b1;
+  --ring: #c4b5fd;
+  --glow: rgba(255, 176, 92, 0.3);
+  --shadow: rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html, body { overflow-x: clip; }
+body {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 15px/1.6 var(--font);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.5s ease, color 0.5s ease;
+}
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+:focus-visible { outline: 2.5px solid var(--ring); outline-offset: 4px; border-radius: 10px; }
+
+/* The theme switch is a circular reveal (see app.js); disable the default fade. */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { z-index: 2; }
+
+.site {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 2.5rem 1.25rem 8.5rem;
+}
+
+/* ---------------------------------------------------------------- hero */
+
+.stage { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 36rem; }
+
+.hero {
+  position: relative;
+  display: block;
+  width: min(78vw, 24rem);
+  aspect-ratio: 1;
+  perspective: 900px;
+  isolation: isolate;
+  border-radius: 1.25rem;
+  -webkit-tap-highlight-color: transparent;
+}
+.tilt, .flip { position: absolute; inset: 0; display: block; transform-style: preserve-3d; }
+.tilt { will-change: transform; }
+.flip { animation: float 6.5s ease-in-out infinite; }
+:root:not([data-ready]) .flip { opacity: 0; }
+
+.pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: opacity 0.7s ease, filter 0.9s ease;
+}
+.pic.night { opacity: 0; }
+:root[data-scheme="dark"] .pic.day { opacity: 0; }
+:root[data-scheme="dark"] .pic.night { opacity: 1; filter: drop-shadow(0 0 22px var(--glow)); }
+
+/* Light catching the model: a highlight masked to the building's own silhouette. */
+.sheen {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--mx, 50%) var(--my, 40%), rgba(255, 255, 255, 0.55), transparent 45%);
+  mix-blend-mode: soft-light;
+  -webkit-mask: var(--mask) center / contain no-repeat;
+  mask: var(--mask) center / contain no-repeat;
+  transition: opacity 0.3s ease;
+}
+
+/* Contact shadow: breathes opposite to the float. */
+.ground {
+  position: absolute;
+  left: 50%;
+  top: 89%;
+  width: 62%;
+  height: 7%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--shadow), transparent);
+  filter: blur(4px);
+  animation: breathe 6.5s ease-in-out infinite;
+  z-index: -1;
+}
+
+@keyframes float { 50% { translate: 0 -6px; } }
+@keyframes breathe { 50% { transform: translateX(-50%) scale(0.9); opacity: 0.75; } }
+
+.caption { font-size: 1.2rem; line-height: 1.5; margin-top: 0.4rem; text-wrap: balance; }
+.soft { color: var(--soft); transition: color 0.2s ease; }
+a.soft:hover { color: var(--ink); }
+time.soft[title] { text-decoration: underline dotted var(--faint); text-underline-offset: 4px; }
+.note { min-height: 1.3rem; margin-top: 0.3rem; font-size: 0.82rem; color: var(--soft); }
+
+.row { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
+.row.quiet { margin-top: 0.6rem; }
+.text-button { color: var(--soft); padding: 0.45rem 0.4rem; min-height: 2.75rem; transition: color 0.2s ease; }
+.text-button:hover { color: var(--ink); }
+.divider { color: var(--faint); }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.6rem;
+  padding: 0.35rem 0.95rem;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--chip-ink);
+  transition: color 0.2s ease, background-color 0.5s ease, transform 0.25s var(--ease-out), box-shadow 0.25s ease;
+}
+.chip:hover { color: var(--ink); }
+.chip:active { transform: scale(0.95); }
+.chip[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 0 0 1.5px currentColor; }
+.chip.missing:not([aria-pressed="true"]) { opacity: 0.5; }
+.pumpkin { width: 1.05rem; height: 1.05rem; color: #e8791c; }
+[data-mood-toggle][aria-pressed="true"] .pumpkin { animation: wobble 1.6s ease-in-out infinite; }
+@keyframes wobble { 25% { rotate: -10deg; } 75% { rotate: 10deg; } }
+
+/* ---------------------------------------------------------------- shelf */
+
+.shelf { width: min(100%, 62rem); display: flex; flex-direction: column; align-items: center; gap: 2rem; }
+.grid {
+  list-style: none;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(42vw, 11rem), 1fr));
+  gap: 1.75rem 1rem;
+}
+.cell { text-align: center; }
+.when { font-size: 0.75rem; color: var(--soft); font-variant-numeric: tabular-nums; }
+.name { font-size: 0.85rem; margin-top: 0.15rem; }
+.thumb { display: block; width: 100%; border-radius: 1rem; transition: transform 0.35s var(--ease-out); }
+.thumb:hover { transform: translateY(-4px) scale(1.03); }
+.thumb img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: contain; }
+
+/* ---------------------------------------------------------------- chrome */
+
+.status { color: var(--soft); }
+.dot-loader { display: inline-block; width: 2.4rem; height: 0.6rem; background: radial-gradient(circle, var(--soft) 40%, transparent 42%) 0 50% / 0.8rem 0.6rem repeat-x; animation: dots 1s steps(3) infinite; }
+@keyframes dots { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 -34% 0 0); } }
+
+.corner { position: fixed; bottom: calc(1.25rem + env(safe-area-inset-bottom)); display: flex; gap: 0.5rem; z-index: 20; }
+.corner.left { left: calc(1.25rem + env(safe-area-inset-left)); }
+.corner.right { right: calc(1.25rem + env(safe-area-inset-right)); }
+.foot {
+  position: fixed;
+  left: 50%;
+  bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(88vw, 30rem);
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--faint);
+  pointer-events: none;
+}
+.build { position: fixed; left: 50%; bottom: calc(1.9rem + env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: 0.65rem; letter-spacing: 0.08em; color: var(--faint); opacity: 0.7; pointer-events: none; }
+.lost { gap: 0.5rem; align-content: center; }
+.lost a { text-decoration: underline; text-underline-offset: 4px; }
+
+@media (max-width: 30rem) {
+  .foot { display: none; }
+  .caption { font-size: 1.08rem; }
+}
+
+/* ---------------------------------------------------------------- Halloween mood (decoration only) */
+
+.mood-layer { position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0; transition: opacity 0.7s ease; overflow: hidden; }
+.mood-layer.on { opacity: 1; }
+.mood-layer .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(46, 16, 72, 0.35) 100%); }
+:root[data-scheme="light"] .mood-layer .vignette { background: radial-gradient(ellipse at 50% 45%, transparent 50%, rgba(120, 60, 160, 0.16) 100%); }
+.fog { position: absolute; left: -30%; width: 160%; height: 40%; bottom: -8%; filter: blur(28px); opacity: 0.55; }
+.fog.a { background: radial-gradient(ellipse at 30% 60%, rgba(160, 140, 190, 0.35), transparent 60%), radial-gradient(ellipse at 75% 70%, rgba(150, 130, 180, 0.3), transparent 55%); animation: drift 26s ease-in-out infinite alternate; }
+.fog.b { bottom: -14%; background: radial-gradient(ellipse at 55% 50%, rgba(120, 100, 160, 0.3), transparent 60%); animation: drift 34s ease-in-out infinite alternate-reverse; }
+@keyframes drift { to { transform: translateX(14%); } }
+
+.bat { position: absolute; left: 0; top: 0; width: var(--size); color: #2a1838; }
+:root[data-scheme="dark"] .bat { color: #08060c; filter: drop-shadow(0 0 6px rgba(255, 160, 80, 0.25)); }
+.bat svg { display: block; width: 100%; }
+.bat .wing { transform-box: fill-box; animation: flap var(--flap) ease-in-out infinite alternate; }
+.bat .wing.l { transform-origin: 100% 40%; }
+.bat .wing.r { transform-origin: 0% 40%; }
+@keyframes flap { from { transform: scaleY(1); } to { transform: scaleY(0.25) translateY(20%); } }
+
+.ember { position: absolute; bottom: -10px; width: 4px; height: 4px; border-radius: 50%; background: #ffb35c; box-shadow: 0 0 8px 2px rgba(255, 150, 60, 0.6); animation: rise linear infinite; }
+@keyframes rise {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  10% { opacity: 0.9; }
+  100% { transform: translate(var(--drift), -95vh) scale(0.3); opacity: 0; }
+}
+
+/* Candle glow under the building while the mood is on. */
+:root[data-mood] .hero::before {
+  content: "";
+  position: absolute;
+  inset: 12% 8% 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(255, 140, 40, 0.28), transparent 70%);
+  filter: blur(16px);
+  animation: flicker 3.2s ease-in-out infinite;
+  z-index: -1;
+}
+@keyframes flicker { 0%, 100% { opacity: 0.7; } 20% { opacity: 1; } 35% { opacity: 0.6; } 60% { opacity: 0.95; } 80% { opacity: 0.75; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

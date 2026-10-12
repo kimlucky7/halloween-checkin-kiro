@@ -1,0 +1,30 @@
+---
+import "../styles/site.css";
+
+interface Props {
+  title: string;
+  description: string;
+}
+const { title, description } = Astro.props;
+const build = (process.env.WORKERS_CI_COMMIT_SHA || process.env.BUILD_ID || "local").slice(0, 7);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title}</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    {/* Pick day or night before first paint so there is no flash. */}
+    <script is:inline>
+      document.documentElement.dataset.scheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    </script>
+  </head>
+  <body>
+    <slot />
+    <p class="build" aria-hidden="true">build {build}</p>
+  </body>
+</html>

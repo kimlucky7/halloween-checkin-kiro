@@ -1,0 +1,62 @@
+---
+import Page from "../layouts/Page.astro";
+---
+
+<Page
+  title="Halloween Check-in"
+  description="Places I have been, kept as little day-and-night miniature buildings — with a Halloween edition."
+>
+  <main class="site">
+    <p class="status" data-status role="status" aria-live="polite"></p>
+
+    <section class="stage" data-stage aria-label="Latest place" hidden>
+      <button type="button" class="hero" data-hero aria-controls="shelf">
+        <span class="tilt" data-tilt>
+          <span class="flip" data-flip>
+            <img class="pic day" data-img="day" width="720" height="720" alt="" decoding="async" />
+            <img class="pic night" data-img="night" width="720" height="720" alt="" decoding="async" />
+            <span class="sheen" data-sheen aria-hidden="true"></span>
+          </span>
+        </span>
+        <span class="ground" aria-hidden="true"></span>
+      </button>
+
+      <p class="caption" data-caption aria-live="polite"></p>
+      <p class="note" data-note role="status"></p>
+
+      <div class="row">
+        <div class="editions" data-editions role="group" aria-label="Edition"></div>
+      </div>
+      <div class="row quiet">
+        <button type="button" class="text-button" data-share>Share</button>
+        <span class="divider" aria-hidden="true">·</span>
+        <button type="button" class="text-button" data-all aria-expanded="false" aria-controls="shelf">All places</button>
+      </div>
+    </section>
+
+    <section class="shelf" id="shelf" data-shelf aria-label="All places" hidden>
+      <ul class="grid" data-grid></ul>
+      <button type="button" class="chip back" data-back>Back</button>
+    </section>
+
+    <div class="corner left">
+      <button type="button" class="chip" data-scheme-toggle>Night</button>
+    </div>
+    <div class="corner right">
+      <button type="button" class="chip" data-mood-toggle aria-pressed="false">
+        <svg class="pumpkin" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 6c-1-2 0-4 2-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M12 6.5c-2.2-1.2-5-.9-6.8.8C3.4 9 3 12.3 4 15.2c1.1 3.4 4.4 5.3 8 5.3s6.9-1.9 8-5.3c1-2.9.6-6.2-1.2-7.9-1.8-1.7-4.6-2-6.8-.8z" fill="currentColor" />
+        </svg>
+        <span>Mood</span>
+      </button>
+      <button type="button" class="chip" data-lang-toggle>中文</button>
+    </div>
+
+    <p class="foot" data-foot></p>
+  </main>
+</Page>
+
+<script>
+  import "../scripts/app.js";
+</script>

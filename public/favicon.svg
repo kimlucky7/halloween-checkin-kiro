@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Halloween Check-in">
+  <path d="M6 15 16 6l10 9" fill="#5b2a86"/>
+  <rect x="8" y="14" width="16" height="13" rx="2" fill="#f3a04a"/>
+  <rect x="14" y="19" width="4" height="8" rx="1" fill="#5b2a86"/>
+  <rect x="10" y="17" width="3" height="3" rx=".6" fill="#ffe08a"/>
+  <rect x="19" y="17" width="3" height="3" rx=".6" fill="#ffe08a"/>
+</svg>

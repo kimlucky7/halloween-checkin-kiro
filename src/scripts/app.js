@@ -1,0 +1,427 @@
+// Site behaviour and motion. Reads data only through ./data.js; decides what to
+// show only through ../lib/view.js. Record text is always inserted with
+// textContent, never parsed as HTML.
+import { caption, editionsOf, pickVariant, shareFileName, sortCheckins, STRINGS } from "../lib/view.js";
+import { run, spring } from "../lib/spring.js";
+import { loadCheckins, loadImageBlob } from "./data.js";
+import { createMood } from "./mood.js";
+
+const root = document.documentElement;
+const $ = (sel) => document.querySelector(sel);
+const els = {
+  stage: $("[data-stage]"),
+  heroButton: $("[data-hero]"),
+  tilt: $("[data-tilt]"),
+  flip: $("[data-flip]"),
+  day: $("[data-img='day']"),
+  night: $("[data-img='night']"),
+  sheen: $("[data-sheen]"),
+  caption: $("[data-caption]"),
+  note: $("[data-note]"),
+  editions: $("[data-editions]"),
+  share: $("[data-share]"),
+  all: $("[data-all]"),
+  shelf: $("[data-shelf]"),
+  grid: $("[data-grid]"),
+  back: $("[data-back]"),
+  scheme: $("[data-scheme-toggle]"),
+  mood: $("[data-mood-toggle]"),
+  lang: $("[data-lang-toggle]"),
+  status: $("[data-status]"),
+  foot: $("[data-foot]"),
+};
+
+const state = {
+  checkins: [],
+  index: 0,
+  edition: "normal",
+  lang: (navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en",
+  view: "hero",
+  busy: false,
+};
+
+const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const finePointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
+const lighting = () => (root.dataset.scheme === "dark" ? "night" : "day");
+const t = () => STRINGS[state.lang];
+const current = () => state.checkins[state.index];
+const el = (tag, attrs = {}, text) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+// ---------------------------------------------------------------- rendering
+
+function renderChrome() {
+  const s = t();
+  root.lang = state.lang === "zh" ? "zh-Hans" : "en";
+  const night = lighting() === "night";
+  els.scheme.textContent = night ? s.toLight : s.toDark;
+  els.scheme.setAttribute("aria-label", s.schemeLabel(night));
+  els.mood.querySelector("span").textContent = s.mood;
+  els.mood.setAttribute("aria-label", s.moodLabel);
+  els.lang.textContent = s.lang;
+  els.lang.setAttribute("aria-label", s.langLabel);
+  els.back.textContent = s.back;
+  els.share.textContent = s.share;
+  els.foot.textContent = s.footnote;
+  els.all.textContent = s.all(state.checkins.length);
+}
+
+function setPictures(variant, checkin) {
+  const s = t();
+  els.day.src = variant.day;
+  els.night.src = variant.night;
+  els.day.alt = lighting() === "day" ? s.alt(variant.theme, "day", checkin.place?.name) : "";
+  els.night.alt = lighting() === "night" ? s.alt(variant.theme, "night", checkin.place?.name) : "";
+  els.sheen.style.setProperty("--mask", `url("${variant.day}")`);
+}
+
+function renderCaption(checkin) {
+  els.caption.replaceChildren();
+  for (const part of caption(checkin, Date.now(), state.lang)) {
+    if (part.kind === "text") els.caption.append(document.createTextNode(part.value));
+    else if (part.kind === "place" && part.href) {
+      els.caption.append(el("a", { class: "soft", href: part.href, target: "_blank", rel: "noopener noreferrer" }, part.value));
+    } else if (part.kind === "time") {
+      els.caption.append(el("time", { class: "soft", datetime: part.datetime, title: part.title }, part.value));
+    } else els.caption.append(el("span", { class: "soft" }, part.value));
+  }
+}
+
+function renderEditions(checkin) {
+  const s = t();
+  const have = editionsOf(checkin);
+  els.editions.replaceChildren();
+  for (const edition of ["normal", "halloween"]) {
+    const b = el("button", {
+      type: "button",
+      class: `chip${have.includes(edition) ? "" : " missing"}`,
+      "aria-pressed": String(state.edition === edition),
+      "data-edition": edition,
+    }, s[edition]);
+    b.addEventListener("click", () => chooseEdition(edition));
+    els.editions.append(b);
+  }
+}
+
+function renderHero() {
+  const checkin = current();
+  if (!checkin) return;
+  const { variant, available } = pickVariant(checkin, state.edition);
+  setPictures(variant, checkin);
+  renderCaption(checkin);
+  renderEditions(checkin);
+  els.note.textContent = available ? "" : t().noEdition(t()[state.edition]);
+}
+
+function renderShelf() {
+  els.grid.replaceChildren();
+  state.checkins.forEach((checkin, i) => {
+    const { variant } = pickVariant(checkin, state.edition);
+    const name = checkin.place?.name ?? checkin.text;
+    const when = (checkin.capturedAt ?? checkin.publishedAt).slice(0, 10);
+    const li = el("li", { class: "cell" });
+    const button = el("button", { type: "button", class: "thumb", "aria-label": t().view(name), "data-index": String(i) });
+    const img = el("img", { src: variant[lighting()], alt: "", width: "240", height: "240", loading: "lazy", decoding: "async" });
+    button.append(img);
+    button.addEventListener("click", () => closeShelf(i));
+    li.append(el("p", { class: "when" }, when), button, el("p", { class: "name" }, name));
+    els.grid.append(li);
+  });
+}
+
+function render() {
+  renderChrome();
+  if (state.view === "hero") renderHero();
+  else renderShelf();
+}
+
+// ---------------------------------------------------------------- motion helpers
+
+function flyClone(img, from, to, { duration = 560 } = {}) {
+  const clone = img.cloneNode();
+  clone.removeAttribute("loading");
+  Object.assign(clone.style, {
+    position: "fixed",
+    left: `${to.left}px`,
+    top: `${to.top}px`,
+    width: `${to.width}px`,
+    height: `${to.height}px`,
+    margin: "0",
+    zIndex: "40",
+    pointerEvents: "none",
+    transformOrigin: "0 0",
+  });
+  document.body.append(clone);
+  const dx = from.left - to.left;
+  const dy = from.top - to.top;
+  const sx = from.width / to.width;
+  const sy = from.height / to.height;
+  const anim = clone.animate(
+    [
+      { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
+      { transform: `translate(${dx * 0.35}px, ${dy * 0.35 - 18}px) scale(${(sx + 1) / 2 * 1.04}, ${(sy + 1) / 2 * 1.04})`, offset: 0.55 },
+      { transform: "none" },
+    ],
+    { duration, easing: "cubic-bezier(.2,.8,.2,1)" },
+  );
+  return anim.finished.then(() => clone.remove(), () => clone.remove());
+}
+
+function visibleHeroImage() {
+  return lighting() === "night" ? els.night : els.day;
+}
+
+async function entrance() {
+  if (reduced()) return;
+  const y = spring({ from: 36, to: 0, stiffness: 140, damping: 16 });
+  const sc = spring({ from: 0.9, to: 1, stiffness: 160, damping: 18 });
+  const op = spring({ from: 0, to: 1, stiffness: 120, damping: 20 });
+  await run([y, sc, op], ([dy, s, o]) => {
+    els.flip.style.transform = `translateY(${dy}px) scale(${s})`;
+    els.flip.style.opacity = String(Math.min(1, Math.max(0, o)));
+  }).done;
+  els.flip.style.transform = "";
+  els.flip.style.opacity = "";
+  // Caption words rise in one after another.
+  [...els.caption.childNodes].forEach((node, i) => {
+    if (node.nodeType === 1) node.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 60 + i * 45, easing: "ease-out", fill: "backwards" });
+  });
+}
+
+// Tilt toward the pointer with a sheen that follows it, sprung so it eases back.
+function setupTilt() {
+  const rx = spring({ stiffness: 120, damping: 14 });
+  const ry = spring({ stiffness: 120, damping: 14 });
+  rx.target = 0;
+  ry.target = 0;
+  let loop = null;
+  const apply = ([x, y]) => {
+    els.tilt.style.transform = `rotateX(${x.toFixed(2)}deg) rotateY(${y.toFixed(2)}deg)`;
+    els.sheen.style.setProperty("--mx", `${50 + y * 5}%`);
+    els.sheen.style.setProperty("--my", `${50 - x * 5}%`);
+    els.sheen.style.opacity = String(Math.min(1, (Math.abs(x) + Math.abs(y)) / 6));
+  };
+  const kick = () => {
+    if (!loop) loop = run([rx, ry], apply);
+    loop.done.then(() => (loop = null));
+  };
+  els.heroButton.addEventListener("pointermove", (e) => {
+    if (!finePointer() || reduced() || state.busy) return;
+    const r = els.heroButton.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width - 0.5;
+    const py = (e.clientY - r.top) / r.height - 0.5;
+    rx.target = -py * 12;
+    ry.target = px * 14;
+    kick();
+  });
+  els.heroButton.addEventListener("pointerleave", () => {
+    rx.target = 0;
+    ry.target = 0;
+    kick();
+  });
+}
+
+// ---------------------------------------------------------------- interactions
+
+async function chooseEdition(edition) {
+  if (edition === state.edition || state.busy) return;
+  state.edition = edition;
+  if (reduced() || state.view !== "hero") return render();
+  state.busy = true;
+  // Turn the model like a cardboard cut-out: away, swap the pictures, spring back.
+  await els.flip.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)" }], { duration: 200, easing: "cubic-bezier(.5,0,.9,.5)" }).finished;
+  render();
+  await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
+  const r = spring({ from: -90, to: 0, stiffness: 180, damping: 15 });
+  await run([r], ([deg]) => (els.flip.style.transform = `rotateY(${deg}deg)`)).done;
+  els.flip.style.transform = "";
+  state.busy = false;
+}
+
+async function step(direction) {
+  const next = state.index + direction;
+  if (state.view !== "hero" || state.busy || next < 0 || next >= state.checkins.length) return;
+  state.busy = true;
+  if (!reduced()) {
+    await els.flip.animate([{ transform: "none", opacity: 1 }, { transform: `translateX(${-direction * 60}px) scale(.94)`, opacity: 0 }], { duration: 180, easing: "ease-in" }).finished;
+  }
+  state.index = next;
+  render();
+  if (!reduced()) {
+    const x = spring({ from: direction * 60, to: 0, stiffness: 200, damping: 20 });
+    const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26 });
+    await run([x, o], ([dx, op]) => {
+      els.flip.style.transform = `translateX(${dx}px)`;
+      els.flip.style.opacity = String(Math.min(1, op));
+    }).done;
+    els.flip.style.transform = "";
+    els.flip.style.opacity = "";
+  }
+  state.busy = false;
+}
+
+async function openShelf() {
+  if (state.busy || state.view === "shelf" || !state.checkins.length) return;
+  state.busy = true;
+  const from = visibleHeroImage().getBoundingClientRect();
+  state.view = "shelf";
+  els.stage.hidden = true;
+  els.shelf.hidden = false;
+  els.all.setAttribute("aria-expanded", "true");
+  render();
+  const target = els.grid.querySelector(`[data-index="${state.index}"] img`);
+  const cells = [...els.grid.children];
+  if (!reduced() && target) {
+    target.style.visibility = "hidden";
+    cells.forEach((cell, i) =>
+      cell.animate([{ opacity: 0, transform: "translateY(18px) scale(.96)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 80 + i * 35, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }),
+    );
+    await nextFrame();
+    await flyClone(target, from, target.getBoundingClientRect());
+    target.style.visibility = "";
+  }
+  els.shelf.querySelector(`[data-index="${state.index}"]`)?.focus({ preventScroll: true });
+  state.busy = false;
+}
+
+async function closeShelf(index = state.index) {
+  if (state.busy || state.view !== "shelf") return;
+  state.busy = true;
+  const thumb = els.grid.querySelector(`[data-index="${index}"] img`);
+  const from = thumb?.getBoundingClientRect();
+  state.index = index;
+  state.view = "hero";
+  els.shelf.hidden = true;
+  els.stage.hidden = false;
+  els.all.setAttribute("aria-expanded", "false");
+  render();
+  const img = visibleHeroImage();
+  if (!reduced() && from) {
+    els.flip.style.visibility = "hidden";
+    await img.decode?.().catch(() => {});
+    await flyClone(img, from, img.getBoundingClientRect(), { duration: 600 });
+    els.flip.style.visibility = "";
+  }
+  els.heroButton.focus({ preventScroll: true });
+  state.busy = false;
+}
+
+function toggleScheme(event) {
+  const next = root.dataset.scheme === "dark" ? "light" : "dark";
+  const apply = () => {
+    root.dataset.scheme = next;
+    render();
+  };
+  if (reduced() || !document.startViewTransition) return apply();
+  const r = els.scheme.getBoundingClientRect();
+  const x = event?.clientX || r.left + r.width / 2;
+  const y = event?.clientY || r.top + r.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const transition = document.startViewTransition(apply);
+  transition.ready.then(() => {
+    root.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 700, easing: "cubic-bezier(.2,.7,.1,1)", pseudoElement: "::view-transition-new(root)" },
+    );
+  }).catch(() => {});
+}
+
+async function share() {
+  const checkin = current();
+  if (!checkin) return;
+  const { variant } = pickVariant(checkin, state.edition);
+  const url = variant[lighting()];
+  const name = shareFileName(checkin, variant.theme, lighting());
+  try {
+    const blob = await loadImageBlob(url);
+    const file = new File([blob], name, { type: "image/png" });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: checkin.place?.name ?? checkin.text });
+      return;
+    }
+    const a = el("a", { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    els.share.textContent = t().shared;
+    setTimeout(() => (els.share.textContent = t().share), 1600);
+  } catch (error) {
+    if (error?.name !== "AbortError") console.info("share failed:", error?.message);
+  }
+}
+
+// ---------------------------------------------------------------- boot
+
+const mood = createMood(document.body);
+
+els.heroButton.addEventListener("click", openShelf);
+els.all.addEventListener("click", openShelf);
+els.back.addEventListener("click", () => closeShelf());
+els.scheme.addEventListener("click", toggleScheme);
+els.share.addEventListener("click", share);
+els.lang.addEventListener("click", () => {
+  state.lang = state.lang === "en" ? "zh" : "en";
+  render();
+});
+els.mood.addEventListener("click", () => {
+  const on = mood.toggle({ reducedMotion: reduced() });
+  els.mood.setAttribute("aria-pressed", String(on));
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && state.view === "shelf") closeShelf();
+  if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
+  if (e.key === "ArrowRight") step(1);
+  if (e.key === "ArrowLeft") step(-1);
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+  if (!sessionStorage.getItem("scheme-chosen")) {
+    root.dataset.scheme = e.matches ? "dark" : "light";
+    render();
+  }
+});
+els.scheme.addEventListener("click", () => sessionStorage.setItem("scheme-chosen", "1"));
+
+// Swipe left/right on touch screens.
+let touchX = null;
+els.stage.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
+els.stage.addEventListener("touchend", (e) => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  touchX = null;
+  if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+});
+
+setupTilt();
+renderChrome();
+
+async function boot() {
+  els.status.hidden = false;
+  els.status.replaceChildren(el("span", { class: "dot-loader", "aria-label": "Loading" }));
+  try {
+    state.checkins = sortCheckins(await loadCheckins());
+  } catch {
+    els.status.replaceChildren(document.createTextNode(t().error + " "));
+    const retry = el("button", { type: "button", class: "chip" }, t().retry);
+    retry.addEventListener("click", boot);
+    els.status.append(retry);
+    return;
+  }
+  if (!state.checkins.length) {
+    els.status.textContent = t().empty;
+    return;
+  }
+  els.status.hidden = true;
+  els.stage.hidden = false;
+  render();
+  await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
+  if (!reduced()) els.flip.style.opacity = "0";
+  root.dataset.ready = "true";
+  entrance();
+}
+boot();

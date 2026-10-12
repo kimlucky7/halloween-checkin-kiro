@@ -14,7 +14,7 @@ import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
 
 const root = document.documentElement;
-root.dataset.app = "3"; // bump when a cached broken bundle must be bypassed
+root.dataset.app = "4"; // bump when a cached broken bundle must be bypassed
 const $ = (sel) => document.querySelector(sel);
 const els = {
   stage: $("[data-stage]"),
@@ -71,6 +71,19 @@ const variantFor = (checkin, night) => pickVariant(checkin, modeEdition(night)).
 const urlFor = (checkin, night) => variantFor(checkin, night)[night ? "night" : "day"];
 const urlsForMode = (night) => state.checkins.map((c) => urlFor(c, night));
 const heroUrls = (checkin) => [urlFor(checkin, false), urlFor(checkin, true)];
+// The pictures around one place (wrapping), which is what a strip shows first.
+function nearbyUrls(index, night, radius = 2) {
+  const n = state.checkins.length;
+  const out = [];
+  for (let d = -radius; d <= radius; d++) out.push(urlFor(state.checkins[(index + d + n * 4) % n], night));
+  return out;
+}
+// Fade elements out while the next view gets ready; returns a function that resets them.
+function fadeOut(nodes, duration = 150) {
+  if (reduced() || !nodes.length) return { done: Promise.resolve(), reset() {} };
+  const anims = nodes.map((n) => n.animate([{ opacity: 1 }, { opacity: 0 }], { duration, easing: "ease-in", fill: "forwards" }));
+  return { done: Promise.all(anims.map((a) => a.finished.catch(() => {}))), reset: () => anims.forEach((a) => a.cancel()) };
+}
 
 // ------------------------------------------------------------ input modality
 // Focus rings are for keyboard users: after a pointer interaction, do not move focus.
@@ -505,8 +518,10 @@ async function openShelf(mode = "strip") {
   if (!state.checkins.length) return;
   if (state.view !== "hero") return switchShelf(mode);
   state.busy = true;
-  // Everything the new view shows is decoded before anything changes on screen.
-  await ensureLoaded(urlsForMode(isNight()), 800);
+  // The words and buttons leave while the pictures the strip shows first are decoded,
+  // so the picture is never the only thing that changes in one frame.
+  const leaving = fadeOut([...els.stage.querySelectorAll(".caption, .row")]);
+  await Promise.all([ensureLoaded(nearbyUrls(state.index, isNight()), 500), leaving.done]);
 
   // ---- one synchronous swap: no frame is painted between these lines ----
   const from = visibleHeroImage().getBoundingClientRect();
@@ -515,6 +530,7 @@ async function openShelf(mode = "strip") {
   els.stage.hidden = true;
   els.shelf.hidden = false;
   render();
+  leaving.reset();
   const landing = mode === "strip" ? homeCell(state.index) : els.grid.querySelector(`[data-cell="${state.index}"]`);
   centerCell(landing);
   applyDepth();
@@ -585,8 +601,10 @@ async function closeShelf(index, fromImg) {
       source = els.grid.querySelector(`[data-cell="${pick}"] img`);
     }
   }
-  // Decode the big pictures while the shelf is still on screen.
-  await ensureLoaded(heroUrls(state.checkins[pick]), 800);
+  // The other pictures step back while the big ones are decoded.
+  const others = [...els.grid.children].filter((c) => c !== source?.closest(".cell"));
+  const leaving = fadeOut(others, 170);
+  await Promise.all([ensureLoaded(heroUrls(state.checkins[pick]), 600), leaving.done]);
 
   // ---- one synchronous swap ----
   const from = source?.getBoundingClientRect();
@@ -595,9 +613,11 @@ async function closeShelf(index, fromImg) {
   els.shelf.hidden = true;
   els.stage.hidden = false;
   render();
+  leaving.reset();
   const img = visibleHeroImage();
   if (!reduced() && from) {
     els.flip.style.visibility = "hidden";
+    riseCaption(220);
     await flyClone(img, from, img.getBoundingClientRect(), { onLand: () => (els.flip.style.visibility = "") });
   }
   focusIfKeyboard(els.heroButton);
@@ -678,7 +698,7 @@ async function setMode(night, event) {
   await ensureLoaded(urlsForMode(night), 900);
   const apply = () => {
     root.dataset.scheme = night ? "dark" : "light";
-    mood.set(night, { reducedMotion: reduced() });
+    mood.set(night, { reducedMotion: reduced(), anchor: els.heroButton });
     rerender();
   };
   if (reduced() || !document.startViewTransition) return apply();
@@ -808,7 +828,7 @@ async function boot() {
   await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
   if (!reduced()) els.flip.style.opacity = "0";
   root.dataset.ready = "true";
-  if (isNight()) mood.set(true, { reducedMotion: reduced() }); // night is the Halloween look
+  if (isNight()) mood.set(true, { reducedMotion: reduced(), anchor: els.heroButton }); // night is the Halloween look
   entrance();
   warmUp();
 }

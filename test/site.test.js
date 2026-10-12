@@ -188,7 +188,13 @@ test("the mood module touches no data and record text is never parsed as HTML", 
   const app = read("scripts/app.js");
   assert.ok(!/insertAdjacentHTML|outerHTML|document\.write/.test(app));
   // innerHTML is only ever given static markup: the bat and fog in mood.js, the pumpkin in app.js.
-  assert.equal((mood.match(/innerHTML/g) ?? []).length, 2);
+  const assignments = mood.match(/innerHTML\s*=\s*[^;]+;/g) ?? [];
+  assert.ok(assignments.length >= 4);
+  for (const a of assignments) {
+    const rhs = a.replace(/^innerHTML\s*=\s*/, "");
+    // only the static constants or string literals built from them
+    assert.ok(!/(checkin|place|text|name|caption|data)\b/i.test(rhs.replace(/class=\\?"[^"]*"/g, "")), `dynamic markup in mood.js: ${a}`);
+  }
   assert.equal((app.match(/innerHTML/g) ?? []).length, 1);
   assert.match(app, /bit\.innerHTML = PUMPKIN;/);
 });

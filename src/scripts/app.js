@@ -1,4 +1,4 @@
-// Site behaviour and motion. Reads data only through ./data.js; decides what to
+// Site behaviour and motion (v2: strip navigation). Reads data only through ./data.js; decides what to
 // show only through ../lib/view.js. Record text is always inserted with
 // textContent, never parsed as HTML.
 import { caption, editionsOf, pickVariant, shareFileName, sortCheckins, STRINGS } from "../lib/view.js";

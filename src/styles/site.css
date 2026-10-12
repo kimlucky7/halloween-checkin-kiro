@@ -155,11 +155,12 @@ time.soft[title] { text-decoration: underline dotted var(--faint); text-underlin
 .grid {
   list-style: none;
   width: 100%;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(42vw, 11rem), 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.75rem 1rem;
 }
-.cell { text-align: center; }
+.cell { text-align: center; width: min(42vw, 11rem); }
 .when { font-size: 0.75rem; color: var(--soft); font-variant-numeric: tabular-nums; }
 .name { font-size: 0.85rem; margin-top: 0.15rem; }
 .thumb { display: block; width: 100%; border-radius: 1rem; transition: transform 0.35s var(--ease-out); }

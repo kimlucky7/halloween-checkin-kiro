@@ -821,14 +821,23 @@ async function setMode(night, event) {
   const y0 = event?.clientY || els.scheme.getBoundingClientRect().top + els.scheme.offsetHeight / 2;
   // Pictures of the new mode are decoded first, so the switch never shows a gap.
   await ensureLoaded(urlsForMode(night), 900);
+  // The night decorations are added after the reveal, so the reveal itself stays light
+  // (building them inside the transition made that frame stall); they fade in.
+  const decorate = () => mood.set(night, { reducedMotion: reduced(), anchor: els.heroButton });
   const apply = () => {
     root.dataset.scheme = night ? "dark" : "light";
-    mood.set(night, { reducedMotion: reduced(), anchor: els.heroButton });
+    if (!night) decorate();
     rerender();
   };
-  if (reduced() || !document.startViewTransition) return apply();
+  if (reduced() || !document.startViewTransition) {
+    apply();
+    return decorate();
+  }
   const radius = Math.hypot(Math.max(x0, innerWidth - x0), Math.max(y0, innerHeight - y0));
   const transition = document.startViewTransition(apply);
+  transition.finished.finally(() => {
+    if (isNight() === night) setTimeout(decorate, 60);
+  });
   transition.ready.then(() => {
     root.animate(
       { clipPath: [`circle(0px at ${x0}px ${y0}px)`, `circle(${radius}px at ${x0}px ${y0}px)`] },

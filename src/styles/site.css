@@ -160,6 +160,7 @@ a.soft:hover { color: var(--ink); }
 
 /* ---------------------------------------------------------------- shelf: strip and grid */
 
+.shelf.warming { position: fixed; inset: 0; opacity: 0.001; pointer-events: none; z-index: -1; }
 .shelf { width: min(100%, 62rem); display: flex; flex-direction: column; align-items: center; gap: 1.75rem; }
 .grid { list-style: none; width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 1.75rem 1rem; }
 .cell { text-align: center; width: min(42vw, 11rem); }

@@ -191,7 +191,7 @@ function renderShelf(mode = state.view) {
   els.shelf.dataset.mode = mode;
   els.expand.setAttribute("aria-expanded", String(mode === "grid"));
   const key = [mode, isNight(), state.lang, n, state.checkins.map((c) => c.id).join()].join("|");
-  if (key === shelfKey) return;
+  if (key === shelfKey) return false;
   shelfKey = key;
   els.grid.replaceChildren();
   for (let c = 0; c < copies; c++) {
@@ -216,6 +216,7 @@ function renderShelf(mode = state.view) {
       els.grid.append(li);
     }
   }
+  return true;
 }
 
 // Build the strip while the big picture is showing, in an idle moment.
@@ -224,11 +225,24 @@ function prepareStrip() {
   const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 200));
   idle(() => {
     if (state.view !== "hero") return;
-    renderShelf("strip");
-    // Decode what the strip shows first, off screen.
-    for (const img of els.grid.querySelectorAll(`[data-copy="${HOME}"] img`)) img.decode?.().catch(() => {});
+    const fresh = renderShelf("strip");
+    if (!fresh || warmed.has(shelfKey)) return;
+    // Paint the strip once, invisibly, so its pictures are decoded and uploaded
+    // before the first real open (otherwise that first frame stalls).
+    const key = shelfKey;
+    Promise.all([...els.grid.querySelectorAll(`[data-copy="${HOME}"] img`)].map((img) => img.decode?.().catch(() => {}))).then(() => {
+      if (state.view !== "hero" || key !== shelfKey) return;
+      els.shelf.classList.add("warming");
+      els.shelf.hidden = false;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        els.shelf.classList.remove("warming");
+        if (state.view === "hero") els.shelf.hidden = true;
+        warmed.add(key);
+      }));
+    });
   });
 }
+const warmed = new Set();
 
 // Re-render without losing the strip's position (rebuilding the list resets its scroll).
 function rerender() {
@@ -619,6 +633,7 @@ async function openShelf(mode = "strip") {
   const flyingName = !reduced() && place ? textClone(place) : null;
 
   // ---- one synchronous swap: no frame is painted between these lines ----
+  els.shelf.classList.remove("warming");
   const from = visibleHeroImage().getBoundingClientRect();
   state.view = mode;
   state.returnTo = "hero";

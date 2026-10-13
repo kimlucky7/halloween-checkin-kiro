@@ -14,7 +14,7 @@ import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
 
 const root = document.documentElement;
-root.dataset.app = "4"; // bump when a cached broken bundle must be bypassed
+root.dataset.app = "5"; // bump when a cached broken bundle must be bypassed
 const $ = (sel) => document.querySelector(sel);
 const els = {
   stage: $("[data-stage]"),
@@ -157,16 +157,16 @@ function setPictures(checkin) {
 function renderCaption(checkin) {
   els.caption.replaceChildren();
   for (const part of caption(checkin, Date.now(), state.lang)) {
-    if (part.kind === "text") els.caption.append(document.createTextNode(part.value));
+    if (part.kind === "text") els.caption.append(el("span", { class: "part" }, part.value));
     else if (part.kind === "place" && part.href) {
-      els.caption.append(el("a", { class: "soft", href: part.href, target: "_blank", rel: "noopener noreferrer" }, part.value));
+      els.caption.append(el("a", { class: "soft part place", href: part.href, target: "_blank", rel: "noopener noreferrer" }, part.value));
     } else if (part.kind === "time") {
       // Like a timeline: the time opens the row of all places.
-      const b = el("button", { type: "button", class: "soft time-button", "aria-label": t().all(state.checkins.length), "data-open-strip": "" });
+      const b = el("button", { type: "button", class: "soft part time-button", "aria-label": t().all(state.checkins.length), "data-open-strip": "" });
       b.append(el("time", { datetime: part.datetime, title: part.title }, part.value));
       b.addEventListener("click", () => openShelf("strip"));
       els.caption.append(b);
-    } else els.caption.append(el("span", { class: "soft" }, part.value));
+    } else els.caption.append(el("span", { class: `soft part${part.kind === "place" ? " place" : ""}` }, part.value));
   }
 }
 
@@ -371,6 +371,7 @@ const visibleHeroImage = () => (isNight() ? els.night : els.day);
 
 async function entrance() {
   if (reduced()) return;
+  riseCaption(140);
   const y = spring({ from: 36, to: 0, stiffness: 140, damping: 16, precision: 0.3 });
   const sc = spring({ from: 0.9, to: 1, stiffness: 160, damping: 18, precision: 0.002 });
   const op = spring({ from: 0, to: 1, stiffness: 120, damping: 20, precision: 0.01 });
@@ -380,18 +381,83 @@ async function entrance() {
   }).done;
   els.flip.style.transform = "";
   els.flip.style.opacity = "";
-  riseCaption();
 }
 
-// The caption's parts rise in one after another.
-function riseCaption(delay = 60) {
+// The caption's parts come in one after another (transform and opacity only, so
+// it stays on the compositor). `from` is the side they slide in from.
+function riseCaption(delay = 60, { skip = null, from = "below" } = {}) {
   if (reduced()) return;
-  [...els.caption.children].forEach((node, i) =>
-    node.animate(
-      [{ opacity: 0, transform: "translateY(8px)", filter: "blur(3px)" }, { opacity: 1, transform: "none", filter: "none" }],
-      { duration: 460, delay: delay + i * 55, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" },
-    ),
-  );
+  const start = from === "below" ? "translate3d(0, 10px, 0)" : `translate3d(${from * 18}px, 0, 0)`;
+  [...els.caption.children].forEach((node, i) => {
+    if (node === skip) return;
+    node.animate([{ opacity: 0, transform: start }, { opacity: 1, transform: "translate3d(0, 0, 0)" }], {
+      duration: 520,
+      delay: delay + i * 38,
+      easing: "cubic-bezier(.22,1,.36,1)",
+      fill: "backwards",
+    });
+  });
+}
+
+const placePart = () => els.caption.querySelector(".place");
+const fontPx = (node) => parseFloat(getComputedStyle(node).fontSize) || 16;
+const centre = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+
+// Shared text: the place name travels between the strip label and the caption,
+// scaling between the two font sizes on the same spring as the picture.
+function morphText(node, fromRect, fromFont, { stiffness = 190, damping = 21 } = {}) {
+  if (!node || !fromRect || reduced()) return Promise.resolve();
+  const toRect = node.getBoundingClientRect();
+  const [fx, fy] = centre(fromRect);
+  const [tx, ty] = centre(toRect);
+  const s0 = fromFont / fontPx(node);
+  node.style.willChange = "transform";
+  const p = spring({ from: 0, to: 1, stiffness, damping, precision: 0.002 });
+  const frame = ([k]) => {
+    const rest = 1 - k;
+    node.style.transform = `translate3d(${(fx - tx) * rest}px, ${(fy - ty) * rest}px, 0) scale(${s0 + (1 - s0) * k})`;
+  };
+  frame([0]);
+  return run([p], frame).done.then(() => {
+    node.style.transform = "";
+    node.style.willChange = "";
+  });
+}
+
+// A floating copy of a text element, used when its view is about to disappear.
+function textClone(node) {
+  const r = node.getBoundingClientRect();
+  const cs = getComputedStyle(node);
+  const copy = el("span", { class: "text-flight", "aria-hidden": "true" }, node.textContent);
+  Object.assign(copy.style, {
+    left: `${r.left}px`,
+    top: `${r.top}px`,
+    width: `${r.width}px`,
+    height: `${r.height}px`,
+    font: cs.font,
+    lineHeight: `${r.height}px`,
+    color: cs.color,
+    letterSpacing: cs.letterSpacing,
+  });
+  document.body.append(copy);
+  return { copy, rect: r, font: fontPx(node) };
+}
+
+function flyText(clone, toNode, { stiffness = 190, damping = 21 } = {}) {
+  const toRect = toNode.getBoundingClientRect();
+  const [fx, fy] = centre(clone.rect);
+  const [tx, ty] = centre(toRect);
+  const s1 = fontPx(toNode) / clone.font;
+  const toColor = getComputedStyle(toNode).color;
+  const fromColor = clone.copy.style.color;
+  const p = spring({ from: 0, to: 1, stiffness, damping, precision: 0.002 });
+  const colour = clone.copy.animate([{ color: fromColor }, { color: toColor }], { duration: 420, easing: "ease-out", fill: "forwards" });
+  return run([p], ([k]) => {
+    clone.copy.style.transform = `translate3d(${(tx - fx) * k}px, ${(ty - fy) * k}px, 0) scale(${1 + (s1 - 1) * k})`;
+  }).done.then(() => {
+    colour.cancel();
+    clone.copy.remove();
+  });
 }
 
 // Tilt toward the pointer with a sheen that follows it, sprung so it eases back.
@@ -468,7 +534,7 @@ function step(dir) {
   return goTo(stepIndex(from, dir, n), dir);
 }
 
-async function goTo(next, dir) {
+async function goTo(next, dir, { dragged = null } = {}) {
   if (state.view !== "hero" || next < 0 || next >= state.checkins.length) return;
   if (state.busy) {
     // Remember the latest request and go there as soon as the current move ends.
@@ -482,10 +548,17 @@ async function goTo(next, dir) {
   const target = state.checkins[next];
   const ready = ensureLoaded(heroUrls(target), 700);
   if (!reduced()) {
-    els.caption.animate([{ opacity: 1 }, { opacity: 0, transform: `translateX(${-dir * 12}px)` }], { duration: 160, easing: "ease-in", fill: "forwards" });
+    const start = dragged ?? { x: 0, opacity: 1 };
+    els.caption.animate(
+      [{ opacity: start.opacity, transform: `translate3d(${start.x * 0.35}px, 0, 0)` }, { opacity: 0, transform: `translate3d(${-dir * 24}px, 0, 0)` }],
+      { duration: 170, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" },
+    );
     await els.flip.animate(
-      [{ transform: "none", opacity: 1, filter: "none" }, { transform: `translateX(${-dir * 70}px) rotateY(${dir * 18}deg) scale(.92)`, opacity: 0, filter: "blur(4px)" }],
-      { duration: 190, easing: "cubic-bezier(.5,0,.75,0)" },
+      [
+        { transform: `translate3d(${start.x}px, 0, 0) rotate(${start.x * 0.02}deg)`, opacity: start.opacity },
+        { transform: `translate3d(${-dir * Math.max(90, Math.abs(start.x) + 60)}px, 0, 0) rotate(${-dir * 4}deg) scale(.92)`, opacity: 0 },
+      ],
+      { duration: dragged ? 160 : 200, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" },
     ).finished;
   }
   await ready;
@@ -493,12 +566,13 @@ async function goTo(next, dir) {
   render();
   if (!reduced()) {
     els.caption.getAnimations().forEach((a) => a.cancel());
-    riseCaption(0);
-    const x = spring({ from: dir * 70, to: 0, stiffness: 210, damping: 19, precision: 0.3 });
-    const r = spring({ from: -dir * 18, to: 0, stiffness: 210, damping: 17, precision: 0.1 });
-    const o = spring({ from: 0, to: 1, stiffness: 200, damping: 26, precision: 0.01 });
+    els.flip.getAnimations().forEach((a) => a.cancel());
+    riseCaption(20, { from: dir });
+    const x = spring({ from: dir * 90, to: 0, stiffness: 220, damping: 22, precision: 0.3 });
+    const r = spring({ from: dir * 4, to: 0, stiffness: 220, damping: 18, precision: 0.05 });
+    const o = spring({ from: 0, to: 1, stiffness: 220, damping: 28, precision: 0.01 });
     await run([x, r, o], ([dx, deg, op]) => {
-      els.flip.style.transform = `translateX(${dx}px) rotateY(${deg}deg)`;
+      els.flip.style.transform = `translate3d(${dx}px, 0, 0) rotate(${deg}deg)`;
       els.flip.style.opacity = String(Math.min(1, op));
     }).done;
     els.flip.style.transform = "";
@@ -520,8 +594,10 @@ async function openShelf(mode = "strip") {
   state.busy = true;
   // The words and buttons leave while the pictures the strip shows first are decoded,
   // so the picture is never the only thing that changes in one frame.
-  const leaving = fadeOut([...els.stage.querySelectorAll(".caption, .row")]);
+  const place = placePart();
+  const leaving = fadeOut([...els.caption.children].filter((n) => n !== place).concat([...els.stage.querySelectorAll(".row")]));
   await Promise.all([ensureLoaded(nearbyUrls(state.index, isNight()), 500), leaving.done]);
+  const flyingName = !reduced() && place ? textClone(place) : null;
 
   // ---- one synchronous swap: no frame is painted between these lines ----
   const from = visibleHeroImage().getBoundingClientRect();
@@ -535,6 +611,11 @@ async function openShelf(mode = "strip") {
   centerCell(landing);
   applyDepth();
   const target = landing?.querySelector("img");
+  const landingName = landing?.querySelector(".name");
+  if (flyingName && landingName) {
+    landingName.style.opacity = "0";
+    flyText(flyingName, landingName).then(() => (landingName.style.opacity = ""));
+  } else flyingName?.copy.remove();
   if (!reduced() && target) {
     const to = target.getBoundingClientRect();
     target.style.visibility = "hidden";
@@ -544,6 +625,10 @@ async function openShelf(mode = "strip") {
       const gap = Math.abs(k - at);
       if (mode === "strip" && gap > 5) return; // off screen
       const side = Math.sign(k - at);
+      if (cell === landing) {
+        cell.querySelector(".when")?.animate([{ opacity: 0, transform: "translate3d(0, 6px, 0)" }, { opacity: 1, transform: "none" }], { duration: 420, delay: 160, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" });
+        return;
+      }
       const frames =
         cell === landing
           ? [{ opacity: 0 }, { opacity: 1 }]
@@ -606,6 +691,9 @@ async function closeShelf(index, fromImg) {
   const leaving = fadeOut(others, 170);
   await Promise.all([ensureLoaded(heroUrls(state.checkins[pick]), 600), leaving.done]);
 
+  const nameNode = source?.closest(".cell")?.querySelector(".name");
+  const nameRect = nameNode?.getBoundingClientRect();
+  const nameFont = nameNode ? fontPx(nameNode) : 16;
   // ---- one synchronous swap ----
   const from = source?.getBoundingClientRect();
   state.index = pick;
@@ -617,7 +705,10 @@ async function closeShelf(index, fromImg) {
   const img = visibleHeroImage();
   if (!reduced() && from) {
     els.flip.style.visibility = "hidden";
-    riseCaption(220);
+    const place = placePart();
+    morphText(place, nameRect, nameFont);
+    riseCaption(160, { skip: place });
+    els.stage.querySelector(".row")?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 360, easing: "ease-out", fill: "backwards" });
     await flyClone(img, from, img.getBoundingClientRect(), { onLand: () => (els.flip.style.visibility = "") });
   }
   focusIfKeyboard(els.heroButton);
@@ -741,7 +832,10 @@ async function share() {
 
 const mood = createMood(document.body);
 
-els.heroButton.addEventListener("click", () => openShelf("strip"));
+els.heroButton.addEventListener("click", () => {
+  if (swipe.swallowClick) return;
+  openShelf("strip");
+});
 // Top right: show everything at once; press again to go back to where you were.
 els.expand.addEventListener("click", () => {
   if (state.view === "grid") return state.returnTo === "strip" ? switchShelf("strip") : closeShelf();
@@ -781,18 +875,70 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
   if (!sessionStorage.getItem("scheme-chosen")) setMode(e.matches);
 });
 
-// Swipe left/right on the big picture: left reveals the place to the right (newer).
-let touchX = null;
-els.heroButton.addEventListener("touchstart", (e) => (touchX = e.touches[0].clientX), { passive: true });
-els.heroButton.addEventListener("touchend", (e) => {
-  if (touchX === null) return;
-  const dx = e.changedTouches[0].clientX - touchX;
-  touchX = null;
-  if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
-});
+// Swipe on the big picture: the model follows the finger (or a mouse drag); let go
+// past a threshold, or flick, to move to the next place; otherwise it springs back.
+// Swiping left shows the place to the right (newer), like the strip.
+const swipe = { id: null, x0: 0, y0: 0, dx: 0, t0: 0, active: false, swallowClick: false, samples: [] };
+function setupSwipe() {
+  const zone = els.stage;
+  zone.addEventListener("pointerdown", (e) => {
+    if (state.view !== "hero" || state.busy || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (!(e.target instanceof Element) || !e.target.closest(".hero")) return;
+    Object.assign(swipe, { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, t0: e.timeStamp, active: false, samples: [[e.timeStamp, e.clientX]] });
+  });
+  zone.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== swipe.id) return;
+    const dx = e.clientX - swipe.x0;
+    const dy = e.clientY - swipe.y0;
+    if (!swipe.active) {
+      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+      swipe.active = true;
+      zone.setPointerCapture?.(e.pointerId);
+    }
+    swipe.dx = dx;
+    swipe.samples.push([e.timeStamp, e.clientX]);
+    if (swipe.samples.length > 6) swipe.samples.shift();
+    const resist = state.checkins.length < 2 ? 0.25 : 1; // nothing to move to: rubber band
+    const x = dx * resist;
+    els.flip.style.transform = `translate3d(${x}px, 0, 0) rotate(${x * 0.02}deg)`;
+    els.flip.style.opacity = String(Math.max(0.35, 1 - Math.abs(x) / 600));
+    els.caption.style.transform = `translate3d(${x * 0.35}px, 0, 0)`;
+    els.caption.style.opacity = String(Math.max(0, 1 - Math.abs(x) / 220));
+  });
+  const end = (e) => {
+    if (e.pointerId !== swipe.id) return;
+    swipe.id = null;
+    if (!swipe.active) return;
+    swipe.swallowClick = true; // the click that ends a swipe must not open the strip
+    setTimeout(() => (swipe.swallowClick = false), 0);
+    const [t0, x0] = swipe.samples[0];
+    const [t1, x1] = swipe.samples.at(-1);
+    const v = t1 > t0 ? (x1 - x0) / (t1 - t0) : 0; // px per ms
+    const go = state.checkins.length > 1 && (Math.abs(swipe.dx) > 70 || (Math.abs(v) > 0.45 && Math.abs(swipe.dx) > 20));
+    const dragged = { x: swipe.dx, opacity: Math.max(0.35, 1 - Math.abs(swipe.dx) / 600) };
+    els.caption.style.transform = "";
+    els.caption.style.opacity = "";
+    if (go && e.type !== "pointercancel") {
+      const dir = swipe.dx < 0 ? 1 : -1;
+      return goTo(stepIndex(state.index, dir, state.checkins.length), dir, { dragged });
+    }
+    // Spring back to rest.
+    const x = spring({ from: swipe.dx, to: 0, stiffness: 260, damping: 22, precision: 0.3 });
+    run([x], ([dx]) => {
+      els.flip.style.transform = `translate3d(${dx}px, 0, 0) rotate(${dx * 0.02}deg)`;
+      els.flip.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / 600));
+    }).done.then(() => {
+      els.flip.style.transform = "";
+      els.flip.style.opacity = "";
+    });
+  };
+  zone.addEventListener("pointerup", end);
+  zone.addEventListener("pointercancel", end);
+}
 
 setupTilt();
 setupShelfScrolling();
+setupSwipe();
 renderChrome();
 
 // Warm the other pictures quietly, one at a time, after the first screen is up.

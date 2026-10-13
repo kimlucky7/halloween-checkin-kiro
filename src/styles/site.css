@@ -72,7 +72,7 @@ a { -webkit-tap-highlight-color: transparent; }
   -webkit-tap-highlight-color: transparent;
 }
 .tilt, .flip { position: absolute; inset: 0; display: block; }
-.tilt { will-change: transform; }
+.tilt, .flip { will-change: transform; }
 .flip { animation: float 6.5s ease-in-out infinite; }
 :root:not([data-ready]) .flip { opacity: 0; }
 
@@ -130,6 +130,11 @@ a { -webkit-tap-highlight-color: transparent; }
 @keyframes breathe { 50% { transform: translateX(-50%) scale(0.9); opacity: 0.75; } }
 
 .caption { font-size: 1.2rem; line-height: 1.5; margin-top: 0.4rem; text-wrap: balance; }
+/* Each caption part is its own box so it can move; pre-wrap keeps the spaces between parts. */
+.caption .part { display: inline-block; white-space: pre-wrap; transform-origin: 50% 60%; }
+.text-flight { position: fixed; z-index: 41; margin: 0; white-space: nowrap; text-align: center; pointer-events: none; will-change: transform; transform-origin: 50% 50%; }
+/* The big picture takes horizontal swipes itself; vertical scrolling stays with the page. */
+.stage, .hero { touch-action: pan-y; }
 .soft { color: var(--soft); transition: color 0.2s ease; }
 a.soft:hover { color: var(--ink); }
 

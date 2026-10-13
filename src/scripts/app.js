@@ -38,8 +38,8 @@ const els = {
 
 // The strip repeats the list so there is always a picture on both sides:
 // five copies, the middle one is "home". Index 0 is the newest place.
-const COPIES = 5;
-const HOME = 2;
+const COPIES = 3;
+const HOME = 1;
 
 const state = {
   checkins: [],
@@ -182,11 +182,17 @@ function renderHero() {
 //  - "strip": one row you swipe sideways, oldest on the left and the newest on the
 //    right, repeated so it never runs out; the picture in the middle is largest;
 //  - "grid": everything at once, newest first.
-function renderShelf() {
-  const mode = state.view;
+// The list is built ahead of time and reused: building dozens of pictures in the
+// frame that opens the strip is what made that frame stall.
+let shelfKey = "";
+function renderShelf(mode = state.view) {
   const n = state.checkins.length;
   const copies = mode === "strip" ? COPIES : 1;
   els.shelf.dataset.mode = mode;
+  els.expand.setAttribute("aria-expanded", String(mode === "grid"));
+  const key = [mode, isNight(), state.lang, n, state.checkins.map((c) => c.id).join()].join("|");
+  if (key === shelfKey) return;
+  shelfKey = key;
   els.grid.replaceChildren();
   for (let c = 0; c < copies; c++) {
     const home = mode === "grid" || c === HOME;
@@ -196,7 +202,7 @@ function renderShelf() {
       const name = checkin.place?.name ?? checkin.text;
       const li = el("li", { class: "cell", "data-cell": String(i), "data-copy": String(c), "aria-hidden": home ? null : "true" });
       const button = el("button", { type: "button", class: "thumb", "aria-label": t().view(name), tabindex: home ? "0" : "-1" });
-      const img = el("img", { src: urlFor(checkin, isNight()), alt: "", width: "360", height: "360", decoding: "async" });
+      const img = el("img", { src: urlFor(checkin, isNight()), alt: "", width: "360", height: "360", decoding: "async", loading: home ? "eager" : "lazy" });
       button.append(img);
       button.addEventListener("click", () => {
         if (drag.moved) return;
@@ -210,7 +216,18 @@ function renderShelf() {
       els.grid.append(li);
     }
   }
-  els.expand.setAttribute("aria-expanded", String(mode === "grid"));
+}
+
+// Build the strip while the big picture is showing, in an idle moment.
+function prepareStrip() {
+  if (state.view !== "hero" || !state.checkins.length) return;
+  const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 200));
+  idle(() => {
+    if (state.view !== "hero") return;
+    renderShelf("strip");
+    // Decode what the strip shows first, off screen.
+    for (const img of els.grid.querySelectorAll(`[data-copy="${HOME}"] img`)) img.decode?.().catch(() => {});
+  });
 }
 
 // Re-render without losing the strip's position (rebuilding the list resets its scroll).
@@ -225,8 +242,10 @@ function rerender() {
 
 function render() {
   renderChrome();
-  if (state.view === "hero") renderHero();
-  else {
+  if (state.view === "hero") {
+    renderHero();
+    prepareStrip();
+  } else {
     renderShelf();
     if (state.view === "strip") applyDepth();
   }

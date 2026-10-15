@@ -7,23 +7,20 @@
 // inserted with textContent, never parsed as HTML.
 import {
   caption, depthFor, loopShift, modeEdition, nearestTo, pickVariant,
-  shareFileName, shortDate, sortCheckins, stepIndex, STRINGS,
+  shareFileName, shortDate, sortCheckins, STRINGS,
 } from "../lib/view.js";
 import { run, spring } from "../lib/spring.js";
 import { loadCheckins, loadImageBlob } from "./data.js";
 import { createMood } from "./mood.js";
 
 const root = document.documentElement;
-root.dataset.app = "5"; // bump when a cached broken bundle must be bypassed
+root.dataset.app = "6"; // bump when a cached broken bundle must be bypassed
 const $ = (sel) => document.querySelector(sel);
 const els = {
   stage: $("[data-stage]"),
-  heroButton: $("[data-hero]"),
-  tilt: $("[data-tilt]"),
-  flip: $("[data-flip]"),
-  day: $("[data-img='day']"),
-  night: $("[data-img='night']"),
-  sheen: $("[data-sheen]"),
+  heroWrap: $("[data-hero-wrap]"),
+  pager: $("[data-pager]"),
+  track: $("[data-pager-track]"),
   caption: $("[data-caption]"),
   share: $("[data-share]"),
   expand: $("[data-expand]"),
@@ -143,15 +140,222 @@ function renderChrome() {
   els.expand.hidden = state.checkins.length < 2;
 }
 
-function setPictures(checkin) {
+// ------------------------------------------------------------ the big picture: a native pager
+// Every place is a slide in a real horizontal scroller with scroll snapping, so a
+// swipe is the browser's own scrolling (finger-tracked, with native momentum) rather
+// than a scripted imitation. Like the strip it holds three copies so it wraps.
+const homeSlide = (i) => els.track.querySelector(`[data-slide="${i}"][data-copy="${HOME}"]`);
+let heroLi = null; // the slide in the middle right now
+function heroParts(li = heroLi ?? homeSlide(state.index)) {
+  if (!li) return null;
+  return {
+    li,
+    button: li.querySelector(".hero"),
+    tilt: li.querySelector(".tilt"),
+    flip: li.querySelector(".flip"),
+    day: li.querySelector(".pic.day"),
+    night: li.querySelector(".pic.night"),
+    sheen: li.querySelector(".sheen"),
+  };
+}
+
+let pagerKey = "";
+function buildPager() {
+  const n = state.checkins.length;
+  const key = state.checkins.map((c) => c.id).join();
+  if (key === pagerKey) return;
+  pagerKey = key;
+  els.track.replaceChildren();
+  for (let c = 0; c < COPIES; c++) {
+    for (let p = 0; p < n; p++) {
+      const i = n - 1 - p; // oldest on the left, newest on the right
+      const checkin = state.checkins[i];
+      const home = c === HOME;
+      const li = el("li", { class: "slide", "data-slide": String(i), "data-copy": String(c), "aria-hidden": home ? null : "true" });
+      const button = el("button", { type: "button", class: "hero", "aria-controls": "shelf", tabindex: home ? "0" : "-1" });
+      const tilt = el("span", { class: "tilt" });
+      const flip = el("span", { class: "flip" });
+      const near = home && (i <= 1 || i >= n - 2);
+      const lazy = near ? "eager" : "lazy";
+      flip.append(
+        el("img", { class: "pic day", src: urlFor(checkin, false), width: "720", height: "720", alt: "", decoding: "async", loading: lazy, draggable: "false" }),
+        el("img", { class: "pic night", src: urlFor(checkin, true), width: "720", height: "720", alt: "", decoding: "async", loading: lazy, draggable: "false" }),
+        el("span", { class: "sheen", "aria-hidden": "true" }),
+      );
+      tilt.append(flip);
+      button.append(tilt, el("span", { class: "ground", "aria-hidden": "true" }));
+      li.append(button);
+      els.track.append(li);
+    }
+  }
+}
+
+// Alt text belongs to whichever picture the current mode shows.
+function setPictures() {
   const s = t();
-  const dayVariant = variantFor(checkin, false);
-  const nightVariant = variantFor(checkin, true);
-  els.day.src = dayVariant.day;
-  els.night.src = nightVariant.night;
-  els.day.alt = isNight() ? "" : s.alt(dayVariant.theme, "day", checkin.place?.name);
-  els.night.alt = isNight() ? s.alt(nightVariant.theme, "night", checkin.place?.name) : "";
-  els.sheen.style.setProperty("--mask", `url("${isNight() ? nightVariant.night : dayVariant.day}")`);
+  const night = isNight();
+  for (const li of els.track.children) {
+    const checkin = state.checkins[Number(li.dataset.slide)];
+    const home = li.dataset.copy === String(HOME);
+    const day = li.querySelector(".pic.day");
+    const nightImg = li.querySelector(".pic.night");
+    day.alt = home && !night ? s.alt(variantFor(checkin, false).theme, "day", checkin.place?.name) : "";
+    nightImg.alt = home && night ? s.alt(variantFor(checkin, true).theme, "night", checkin.place?.name) : "";
+  }
+  const parts = heroParts();
+  if (parts) parts.sheen.style.setProperty("--mask", `url("${night ? parts.night.src : parts.day.src}")`);
+}
+
+const slideCenter = (li) => li.offsetLeft + li.offsetWidth / 2;
+function nearestSlide() {
+  const slides = [...els.track.children];
+  return slides[nearestTo(slides.map(slideCenter), els.pager.scrollLeft + els.pager.clientWidth / 2)] ?? null;
+}
+function centerSlide(li, behavior = "instant") {
+  if (!li) return;
+  els.pager.scrollTo({ left: slideCenter(li) - els.pager.clientWidth / 2, behavior: reduced() ? "instant" : behavior });
+}
+
+// Runs on every scroll frame: neighbours shrink and fade, the caption fades with
+// distance from the middle and changes while it is invisible.
+function pagerFrame() {
+  if (state.view !== "hero" || !els.track.children.length) return;
+  const width = els.pager.clientWidth || 1;
+  const mid = els.pager.scrollLeft + width / 2;
+  const plain = reduced();
+  let best = null;
+  let bestOff = Infinity;
+  for (const li of els.track.children) {
+    const off = (slideCenter(li) - mid) / width;
+    if (Math.abs(off) < Math.abs(bestOff)) {
+      bestOff = off;
+      best = li;
+    }
+    if (Math.abs(off) > 1.6) continue;
+    const d = Math.min(1, Math.abs(off));
+    li.style.setProperty("--depth", plain ? "1" : (1 - d * 0.14).toFixed(3));
+    li.style.setProperty("--fade", plain ? "1" : (1 - d * 0.65).toFixed(3));
+  }
+  if (best && best !== heroLi) {
+    const old = heroParts();
+    if (old) old.tilt.style.transform = "";
+    heroLi = best;
+    const i = Number(best.dataset.slide);
+    if (i !== state.index) {
+      state.index = i;
+      renderCaption(current());
+    }
+    setPictures();
+  }
+  const fade = Math.max(0, 1 - Math.abs(bestOff) * 2.4);
+  els.caption.style.opacity = plain ? "" : fade.toFixed(3);
+  els.caption.style.transform = plain ? "" : `translate3d(${(-bestOff * 28).toFixed(1)}px, 0, 0)`;
+}
+
+// Jump between identical copies while at rest (invisible), or at once near an end.
+function normalizePager() {
+  if (state.view !== "hero" || pagerDrag.active) return;
+  const li = nearestSlide();
+  if (!li) return;
+  const copy = Number(li.dataset.copy);
+  if (copy === HOME) return;
+  const period = els.track.querySelector(`[data-copy="${HOME + 1}"]`).offsetLeft - els.track.querySelector(`[data-copy="${HOME}"]`).offsetLeft;
+  els.pager.style.scrollSnapType = "none";
+  els.pager.scrollLeft += loopShift(copy, HOME, period);
+  requestAnimationFrame(() => (els.pager.style.scrollSnapType = ""));
+  pagerFrame();
+}
+
+let pagerFrameId = 0;
+let pagerIdle = 0;
+let pagerTarget = null;
+function onPagerScroll() {
+  if (!pagerFrameId) pagerFrameId = requestAnimationFrame(() => {
+    pagerFrameId = 0;
+    pagerFrame();
+  });
+  const li = nearestSlide();
+  const copy = li ? Number(li.dataset.copy) : HOME;
+  if (copy === 0 || copy === COPIES - 1) {
+    // only when the edge copy is actually reached
+    const edge = els.pager.scrollLeft < els.pager.clientWidth || els.pager.scrollLeft > els.pager.scrollWidth - 2 * els.pager.clientWidth;
+    if (edge) normalizePager();
+  }
+  clearTimeout(pagerIdle);
+  pagerIdle = setTimeout(() => {
+    pagerTarget = null;
+    normalizePager();
+    // Safety net: if a browser left the scroller between two slides, finish the snap.
+    const li = nearestSlide();
+    if (li && !pagerDrag.active && Math.abs(slideCenter(li) - (els.pager.scrollLeft + els.pager.clientWidth / 2)) > 1) centerSlide(li, "smooth");
+  }, 160);
+}
+
+// Arrow keys: one slide at a time, adding up when pressed quickly.
+function pagerStep(dir) {
+  const base = pagerTarget ?? nearestSlide();
+  const next = dir > 0 ? base?.nextElementSibling : base?.previousElementSibling;
+  if (!next) return;
+  pagerTarget = next;
+  centerSlide(next, "smooth");
+}
+
+// Mouse: drag the pager like a touch screen; let go and it settles on a slide
+// (a quick flick moves one slide). Touch uses native scrolling untouched.
+const pagerDrag = { active: false, moved: false, x0: 0, left0: 0, from: null, samples: [] };
+function setupPager() {
+  els.pager.addEventListener("scroll", onPagerScroll, { passive: true });
+  addEventListener("resize", () => {
+    if (state.view === "hero" && heroLi) {
+      centerSlide(heroLi);
+      pagerFrame();
+    }
+  });
+  els.pager.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // trackpads scroll sideways natively
+  }, { passive: true });
+  els.pager.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0 || state.view !== "hero") return;
+    Object.assign(pagerDrag, { active: true, moved: false, x0: e.clientX, left0: els.pager.scrollLeft, from: nearestSlide(), samples: [[e.timeStamp, e.clientX]] });
+  });
+  addEventListener("pointermove", (e) => {
+    if (!pagerDrag.active) return;
+    const dx = e.clientX - pagerDrag.x0;
+    if (!pagerDrag.moved && Math.abs(dx) > 5) {
+      pagerDrag.moved = true;
+      els.pager.style.scrollSnapType = "none";
+      els.pager.classList.add("dragging");
+    }
+    if (!pagerDrag.moved) return;
+    els.pager.scrollLeft = pagerDrag.left0 - dx;
+    pagerDrag.samples.push([e.timeStamp, e.clientX]);
+    if (pagerDrag.samples.length > 6) pagerDrag.samples.shift();
+  });
+  addEventListener("pointerup", () => {
+    if (!pagerDrag.active) return;
+    pagerDrag.active = false;
+    if (!pagerDrag.moved) return;
+    const [t0, x0] = pagerDrag.samples[0];
+    const [t1, x1] = pagerDrag.samples.at(-1);
+    const v = t1 > t0 ? (x1 - x0) / (t1 - t0) : 0; // px per ms
+    let target = nearestSlide();
+    if (target === pagerDrag.from && Math.abs(v) > 0.35) target = v < 0 ? target.nextElementSibling ?? target : target.previousElementSibling ?? target;
+    els.pager.classList.remove("dragging");
+    centerSlide(target, "smooth");
+    // Native snapping returns once the smooth scroll has landed.
+    const restore = () => (els.pager.style.scrollSnapType = "");
+    if ("onscrollend" in window) els.pager.addEventListener("scrollend", restore, { once: true });
+    else setTimeout(restore, 450);
+    setTimeout(() => (pagerDrag.moved = false), 0);
+  });
+  // Clicking the middle slide opens the strip; clicking a neighbour brings it to the middle.
+  els.track.addEventListener("click", (e) => {
+    if (pagerDrag.moved || !(e.target instanceof Element)) return;
+    const li = e.target.closest(".slide");
+    if (!li) return;
+    if (li === heroLi) openShelf("strip");
+    else centerSlide(li, "smooth");
+  });
 }
 
 function renderCaption(checkin) {
@@ -173,7 +377,7 @@ function renderCaption(checkin) {
 function renderHero() {
   const checkin = current();
   if (!checkin) return;
-  setPictures(checkin);
+  setPictures();
   renderCaption(checkin);
   els.expand.setAttribute("aria-expanded", "false");
 }
@@ -400,7 +604,10 @@ function flyClone(img, from, to, { onLand, arc = -36, lean = 4, stiffness = 190,
   });
 }
 
-const visibleHeroImage = () => (isNight() ? els.night : els.day);
+const visibleHeroImage = () => {
+  const p = heroParts();
+  return isNight() ? p.night : p.day;
+};
 
 async function entrance() {
   if (reduced()) return;
@@ -408,12 +615,13 @@ async function entrance() {
   const y = spring({ from: 36, to: 0, stiffness: 140, damping: 16, precision: 0.3 });
   const sc = spring({ from: 0.9, to: 1, stiffness: 160, damping: 18, precision: 0.002 });
   const op = spring({ from: 0, to: 1, stiffness: 120, damping: 20, precision: 0.01 });
+  const flip = heroParts().flip;
   await run([y, sc, op], ([dy, s, o]) => {
-    els.flip.style.transform = `translateY(${dy}px) scale(${s})`;
-    els.flip.style.opacity = String(Math.min(1, Math.max(0, o)));
+    flip.style.transform = `translateY(${dy}px) scale(${s})`;
+    flip.style.opacity = String(Math.min(1, Math.max(0, o)));
   }).done;
-  els.flip.style.transform = "";
-  els.flip.style.opacity = "";
+  flip.style.transform = "";
+  flip.style.opacity = "";
 }
 
 // The caption's parts come in one after another (transform and opacity only, so
@@ -501,23 +709,26 @@ function setupTilt() {
   ry.target = 0;
   let loop = null;
   const apply = ([x, y]) => {
-    els.tilt.style.transform = `rotateX(${x.toFixed(2)}deg) rotateY(${y.toFixed(2)}deg)`;
-    els.sheen.style.setProperty("--mx", `${50 + y * 5}%`);
-    els.sheen.style.setProperty("--my", `${50 - x * 5}%`);
-    els.sheen.style.opacity = String(Math.min(1, (Math.abs(x) + Math.abs(y)) / 6));
+    const p = heroParts();
+    if (!p) return;
+    p.tilt.style.transform = `rotateX(${x.toFixed(2)}deg) rotateY(${y.toFixed(2)}deg)`;
+    p.sheen.style.setProperty("--mx", `${50 + y * 5}%`);
+    p.sheen.style.setProperty("--my", `${50 - x * 5}%`);
+    p.sheen.style.opacity = String(Math.min(1, (Math.abs(x) + Math.abs(y)) / 6));
   };
   const kick = () => {
     if (!loop) loop = run([rx, ry], apply);
     loop.done.then(() => (loop = null));
   };
-  els.heroButton.addEventListener("pointermove", (e) => {
-    if (!finePointer() || reduced() || state.busy) return;
-    const r = els.heroButton.getBoundingClientRect();
+  els.pager.addEventListener("pointermove", (e) => {
+    if (!finePointer() || reduced() || state.busy || pagerDrag.moved) return;
+    const r = heroParts()?.button.getBoundingClientRect();
+    if (!r) return;
     rx.target = -((e.clientY - r.top) / r.height - 0.5) * 12;
     ry.target = ((e.clientX - r.left) / r.width - 0.5) * 14;
     kick();
   });
-  els.heroButton.addEventListener("pointerleave", () => {
+  els.pager.addEventListener("pointerleave", () => {
     rx.target = 0;
     ry.target = 0;
     kick();
@@ -528,7 +739,7 @@ function setupTilt() {
 const PUMPKIN = '<svg viewBox="0 0 24 24"><path d="M12 6c-1-2 0-4 2-4" fill="none" stroke="#3b5a1f" stroke-width="2" stroke-linecap="round"/><path d="M12 6.5c-2.2-1.2-5-.9-6.8.8C3.4 9 3 12.3 4 15.2c1.1 3.4 4.4 5.3 8 5.3s6.9-1.9 8-5.3c1-2.9.6-6.2-1.2-7.9-1.8-1.7-4.6-2-6.8-.8z" fill="#ec7a1c"/></svg>';
 function burst() {
   if (reduced() || state.view !== "hero") return;
-  const r = els.heroButton.getBoundingClientRect();
+  const r = heroParts().button.getBoundingClientRect();
   const ox = r.left + r.width / 2;
   const oy = r.top + r.height * 0.72;
   for (let i = 0; i < 16; i++) {
@@ -558,67 +769,6 @@ function burst() {
 }
 
 // ------------------------------------------------------------ navigation
-
-// dir +1 moves right (toward newer places), -1 moves left (toward older ones); it wraps.
-function step(dir) {
-  const n = state.checkins.length;
-  if (n < 2) return;
-  const from = state.pending ?? state.heading ?? state.index;
-  return goTo(stepIndex(from, dir, n), dir);
-}
-
-async function goTo(next, dir, { dragged = null } = {}) {
-  if (state.view !== "hero" || next < 0 || next >= state.checkins.length) return;
-  if (state.busy) {
-    // Remember the latest request and go there as soon as the current move ends.
-    state.pending = next;
-    state.pendingDir = dir;
-    return;
-  }
-  if (next === state.index) return;
-  state.busy = true;
-  state.heading = next;
-  const target = state.checkins[next];
-  const ready = ensureLoaded(heroUrls(target), 700);
-  if (!reduced()) {
-    const start = dragged ?? { x: 0, opacity: 1 };
-    els.caption.animate(
-      [{ opacity: start.opacity, transform: `translate3d(${start.x * 0.35}px, 0, 0)` }, { opacity: 0, transform: `translate3d(${-dir * 24}px, 0, 0)` }],
-      { duration: 170, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" },
-    );
-    await els.flip.animate(
-      [
-        { transform: `translate3d(${start.x}px, 0, 0) rotate(${start.x * 0.02}deg)`, opacity: start.opacity },
-        { transform: `translate3d(${-dir * Math.max(90, Math.abs(start.x) + 60)}px, 0, 0) rotate(${-dir * 4}deg) scale(.92)`, opacity: 0 },
-      ],
-      { duration: dragged ? 160 : 200, easing: "cubic-bezier(.5,0,.75,0)", fill: "forwards" },
-    ).finished;
-  }
-  await ready;
-  state.index = next;
-  render();
-  if (!reduced()) {
-    els.caption.getAnimations().forEach((a) => a.cancel());
-    els.flip.getAnimations().forEach((a) => a.cancel());
-    riseCaption(20, { from: dir });
-    const x = spring({ from: dir * 90, to: 0, stiffness: 220, damping: 22, precision: 0.3 });
-    const r = spring({ from: dir * 4, to: 0, stiffness: 220, damping: 18, precision: 0.05 });
-    const o = spring({ from: 0, to: 1, stiffness: 220, damping: 28, precision: 0.01 });
-    await run([x, r, o], ([dx, deg, op]) => {
-      els.flip.style.transform = `translate3d(${dx}px, 0, 0) rotate(${deg}deg)`;
-      els.flip.style.opacity = String(Math.min(1, op));
-    }).done;
-    els.flip.style.transform = "";
-    els.flip.style.opacity = "";
-  }
-  state.heading = null;
-  if (state.pending !== null) {
-    const pending = state.pending;
-    state.pending = null;
-    state.busy = false;
-    goTo(pending, state.pendingDir);
-  } else settle();
-}
 
 async function openShelf(mode = "strip") {
   if (later(() => openShelf(mode))) return;
@@ -734,18 +884,24 @@ async function closeShelf(index, fromImg) {
   state.view = "hero";
   els.shelf.hidden = true;
   els.stage.hidden = false;
+  heroLi = null;
+  centerSlide(homeSlide(pick));
   render();
+  pagerFrame();
   leaving.reset();
+  els.caption.style.opacity = "";
+  els.caption.style.transform = "";
   const img = visibleHeroImage();
+  const heroFlip = heroParts().flip;
   if (!reduced() && from) {
-    els.flip.style.visibility = "hidden";
+    heroFlip.style.visibility = "hidden";
     const place = placePart();
     morphText(place, nameRect, nameFont);
     riseCaption(160, { skip: place });
     els.stage.querySelector(".row")?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 360, easing: "ease-out", fill: "backwards" });
-    await flyClone(img, from, img.getBoundingClientRect(), { onLand: () => (els.flip.style.visibility = "") });
+    await flyClone(img, from, img.getBoundingClientRect(), { onLand: () => (heroFlip.style.visibility = "") });
   }
-  focusIfKeyboard(els.heroButton);
+  focusIfKeyboard(heroParts().button);
   settle();
 }
 
@@ -823,7 +979,7 @@ async function setMode(night, event) {
   await ensureLoaded(urlsForMode(night), 900);
   // The night decorations are added after the reveal, so the reveal itself stays light
   // (building them inside the transition made that frame stall); they fade in.
-  const decorate = () => mood.set(night, { reducedMotion: reduced(), anchor: els.heroButton });
+  const decorate = () => mood.set(night, { reducedMotion: reduced(), anchor: els.heroWrap });
   const apply = () => {
     root.dataset.scheme = night ? "dark" : "light";
     if (!night) decorate();
@@ -875,10 +1031,7 @@ async function share() {
 
 const mood = createMood(document.body);
 
-els.heroButton.addEventListener("click", () => {
-  if (swipe.swallowClick) return;
-  openShelf("strip");
-});
+
 // Top right: show everything at once; press again to go back to where you were.
 els.expand.addEventListener("click", () => {
   if (state.view === "grid") return state.returnTo === "strip" ? switchShelf("strip") : closeShelf();
@@ -908,7 +1061,10 @@ document.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLElement && e.target.closest("input, textarea")) return;
   const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
   if (!dir) return;
-  if (state.view === "hero") step(dir);
+  if (state.view === "hero") {
+    e.preventDefault();
+    pagerStep(dir);
+  }
   else if (state.view === "strip") {
     e.preventDefault();
     stripStep(dir);
@@ -918,70 +1074,9 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
   if (!sessionStorage.getItem("scheme-chosen")) setMode(e.matches);
 });
 
-// Swipe on the big picture: the model follows the finger (or a mouse drag); let go
-// past a threshold, or flick, to move to the next place; otherwise it springs back.
-// Swiping left shows the place to the right (newer), like the strip.
-const swipe = { id: null, x0: 0, y0: 0, dx: 0, t0: 0, active: false, swallowClick: false, samples: [] };
-function setupSwipe() {
-  const zone = els.stage;
-  zone.addEventListener("pointerdown", (e) => {
-    if (state.view !== "hero" || state.busy || (e.pointerType === "mouse" && e.button !== 0)) return;
-    if (!(e.target instanceof Element) || !e.target.closest(".hero")) return;
-    Object.assign(swipe, { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, t0: e.timeStamp, active: false, samples: [[e.timeStamp, e.clientX]] });
-  });
-  zone.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== swipe.id) return;
-    const dx = e.clientX - swipe.x0;
-    const dy = e.clientY - swipe.y0;
-    if (!swipe.active) {
-      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
-      swipe.active = true;
-      zone.setPointerCapture?.(e.pointerId);
-    }
-    swipe.dx = dx;
-    swipe.samples.push([e.timeStamp, e.clientX]);
-    if (swipe.samples.length > 6) swipe.samples.shift();
-    const resist = state.checkins.length < 2 ? 0.25 : 1; // nothing to move to: rubber band
-    const x = dx * resist;
-    els.flip.style.transform = `translate3d(${x}px, 0, 0) rotate(${x * 0.02}deg)`;
-    els.flip.style.opacity = String(Math.max(0.35, 1 - Math.abs(x) / 600));
-    els.caption.style.transform = `translate3d(${x * 0.35}px, 0, 0)`;
-    els.caption.style.opacity = String(Math.max(0, 1 - Math.abs(x) / 220));
-  });
-  const end = (e) => {
-    if (e.pointerId !== swipe.id) return;
-    swipe.id = null;
-    if (!swipe.active) return;
-    swipe.swallowClick = true; // the click that ends a swipe must not open the strip
-    setTimeout(() => (swipe.swallowClick = false), 0);
-    const [t0, x0] = swipe.samples[0];
-    const [t1, x1] = swipe.samples.at(-1);
-    const v = t1 > t0 ? (x1 - x0) / (t1 - t0) : 0; // px per ms
-    const go = state.checkins.length > 1 && (Math.abs(swipe.dx) > 70 || (Math.abs(v) > 0.45 && Math.abs(swipe.dx) > 20));
-    const dragged = { x: swipe.dx, opacity: Math.max(0.35, 1 - Math.abs(swipe.dx) / 600) };
-    els.caption.style.transform = "";
-    els.caption.style.opacity = "";
-    if (go && e.type !== "pointercancel") {
-      const dir = swipe.dx < 0 ? 1 : -1;
-      return goTo(stepIndex(state.index, dir, state.checkins.length), dir, { dragged });
-    }
-    // Spring back to rest.
-    const x = spring({ from: swipe.dx, to: 0, stiffness: 260, damping: 22, precision: 0.3 });
-    run([x], ([dx]) => {
-      els.flip.style.transform = `translate3d(${dx}px, 0, 0) rotate(${dx * 0.02}deg)`;
-      els.flip.style.opacity = String(Math.max(0.35, 1 - Math.abs(dx) / 600));
-    }).done.then(() => {
-      els.flip.style.transform = "";
-      els.flip.style.opacity = "";
-    });
-  };
-  zone.addEventListener("pointerup", end);
-  zone.addEventListener("pointercancel", end);
-}
-
+setupPager();
 setupTilt();
 setupShelfScrolling();
-setupSwipe();
 renderChrome();
 
 // Warm the other pictures quietly, one at a time, after the first screen is up.
@@ -1013,11 +1108,15 @@ async function boot() {
   }
   els.status.hidden = true;
   els.stage.hidden = false;
+  buildPager();
+  centerSlide(homeSlide(state.index));
+  pagerFrame();
   render();
-  await Promise.all([els.day.decode?.(), els.night.decode?.()].map((p) => p?.catch(() => {})));
-  if (!reduced()) els.flip.style.opacity = "0";
+  const first = heroParts();
+  await Promise.all([first.day.decode?.(), first.night.decode?.()].map((p) => p?.catch(() => {})));
+  if (!reduced()) first.flip.style.opacity = "0";
   root.dataset.ready = "true";
-  if (isNight()) mood.set(true, { reducedMotion: reduced(), anchor: els.heroButton }); // night is the Halloween look
+  if (isNight()) mood.set(true, { reducedMotion: reduced(), anchor: els.heroWrap }); // night is the Halloween look
   entrance();
   warmUp();
 }

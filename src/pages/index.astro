@@ -10,16 +10,11 @@ import Page from "../layouts/Page.astro";
     <p class="status" data-status role="status" aria-live="polite"></p>
 
     <section class="stage" data-stage aria-label="Latest place" hidden>
-      <button type="button" class="hero" data-hero aria-controls="shelf">
-        <span class="tilt" data-tilt>
-          <span class="flip" data-flip>
-            <img class="pic day" data-img="day" width="720" height="720" alt="" decoding="async" />
-            <img class="pic night" data-img="night" width="720" height="720" alt="" decoding="async" />
-            <span class="sheen" data-sheen aria-hidden="true"></span>
-          </span>
-        </span>
-        <span class="ground" aria-hidden="true"></span>
-      </button>
+      <div class="hero-wrap" data-hero-wrap>
+        <div class="pager" data-pager>
+          <ul class="pager-track" data-pager-track></ul>
+        </div>
+      </div>
 
       <p class="caption" data-caption aria-live="polite"></p>
 

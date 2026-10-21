@@ -18,6 +18,16 @@ test("the ChatGPT skill names only tools the MCP server provides, and every requ
   }
 });
 
+test("the skill's prompt files exist and night prompts never take the photo", () => {
+  const day = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/day-prompt.md", import.meta.url), "utf8");
+  const night = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/night-prompt.md", import.meta.url), "utf8");
+  assert.match(skill, /references\/day-prompt\.md/);
+  assert.match(skill, /references\/night-prompt\.md/);
+  assert.match(day, /#FF00FF/);
+  assert.match(night, /never the original\s+photo/);
+  for (const text of [day, night]) assert.ok(!/check-in card|打卡卡片/.test(text));
+});
+
 test("the skill keeps the publication boundary and the prepare script keeps the site's geometry", () => {
   assert.match(skill, /stop and wait/i);
   assert.match(skill, /normal\*\* revision first/);

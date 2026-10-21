@@ -25,35 +25,24 @@ public until the user clearly asks you to publish.
 
 ## 2. Generate four images, one at a time
 
-Use your image tool. Send it **exactly** the prompt text below (fill in nothing else).
-Never put the words "check-in", "checkin", "打卡", a date, an address, a map or a place
-name into an image prompt: the image tool then draws a check-in card or an app screen
-instead of a building. The result must be **one miniature building object and nothing
-else** — no card, no frame, no UI, no text overlay, no map, no pin, no date, no caption.
+Read the prompt files and use them **word for word**:
 
-Shared ending for every prompt (call it BACKDROP):
+- [references/day-prompt.md](references/day-prompt.md) — normal-day and halloween-day, from the user's photo
+- [references/night-prompt.md](references/night-prompt.md) — normal-night and halloween-night, each from its accepted day image only
 
-> Show only the miniature object, centred, whole, with empty space around it. Background: one perfectly flat solid magenta colour #FF00FF filling the whole image, no gradient, no floor, no shadow, no reflection, no border. Do not use magenta on the object. No text, labels, captions, frames, cards, maps, icons or UI of any kind, except the lettering that is physically on the building's own sign.
+Order: normal-day → check → normal-night → check → halloween-day → check → halloween-night → check.
+Never put "check-in", "打卡", a date, an address, a map or a place name into an image
+prompt; the result must be one miniature building and nothing else (no card, frame, UI,
+caption, map or pin).
 
-1. **normal-day** — image input: the user's photo only.
-   > A photograph of a small handcrafted collectible scale model of the building in the reference photo, soft clay and painted-wood look, like a miniature on a shelf. Straight front view of the facade. Keep the building's shape, entrance, windows, doors and colours, and copy the main shop sign exactly as it appears, same letters and language; make the sign large, high-contrast and crisp so the name stays readable when the picture is shown small. Leave out people, cars, bicycles, cables, street signs and the street itself. Do not add anything that is not part of the building. BACKDROP
-2. **normal-night** — image input: image 1 only.
-   > Relight this exact miniature as night: dark blue ambient light, warm glowing windows and sign. Keep every shape, the camera, the framing, the sign lettering and the magenta background exactly the same; change only the lighting on the object. BACKDROP
-3. **halloween-day** — image input: the user's photo only.
-   > Same as a small handcrafted collectible scale model of the building in the reference photo (front view, same shape, windows, doors, colours, and the main sign copied exactly), decorated for Halloween with a few small additions: a carved pumpkin by the door, a string of orange lights, one paper bat. Decorations stay small and never cover the sign. No people, cars or street. BACKDROP
-4. **halloween-night** — image input: image 3 only.
-   > Relight this exact decorated miniature as night: dark blue ambient light, glowing windows, sign, pumpkin and string lights. Keep every shape, the framing, the sign and the magenta background the same; change only the lighting. BACKDROP
+**Core failures** (retry that image once with a short correction, e.g. "only the building
+model, no card or text"): not a single miniature building; a card, screen, map or caption;
+wrong building; sign text wrong or missing; night changed the shapes; background not flat
+magenta. Anything smaller is a note for the review. If the retry also fails, show both
+attempts, say which rule they broke, and ask the user.
 
-After each image, look at it before going on. **Core failures** (retry that stage once
-with a short correction, e.g. "only the building model, no card or text"): not a single
-miniature building; a card, screen, map or caption; wrong building; sign text wrong or
-missing; night changed the shapes; background not flat magenta. Anything smaller is a
-note for the review. If the retry also fails, show both attempts, say which rule they
-broke, and ask the user (offer to try again with a clearer photo).
-
-Do not research or guess the location (city, branch, address) from the photo. The
-place name is what the user says or what the sign clearly reads; everything else stays
-unknown.
+Do not research or guess the location (city, branch, address) from the photo. The place
+name is what the user says or what the sign clearly reads; everything else stays unknown.
 
 ## 3. Prepare and check (in your Python sandbox)
 

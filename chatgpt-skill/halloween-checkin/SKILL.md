@@ -5,6 +5,8 @@ description: "Turn the user's photo of a real place into a reviewed day/night mi
 
 # Halloween Check-in (ChatGPT)
 
+When this skill is used, follow these steps in order and do not improvise another check-in format (no location lookup, no check-in cards, no claims that something was saved before a tool returned it).
+
 You generate the pictures with your own image tool. The prepare script in this skill
 cuts them out and checks them. The **Halloween Check-in** plugin's tools receive the
 finished files and publish them. The tools never generate images, and nothing is
@@ -23,26 +25,35 @@ public until the user clearly asks you to publish.
 
 ## 2. Generate four images, one at a time
 
-Each a square image (1024×1024 if you can choose). Every image: the building on a
-perfectly flat, uniform magenta background (#FF00FF), no gradient, no ground, no
-shadow, no reflection, and no magenta anywhere on the building.
+Use your image tool. Send it **exactly** the prompt text below (fill in nothing else).
+Never put the words "check-in", "checkin", "打卡", a date, an address, a map or a place
+name into an image prompt: the image tool then draws a check-in card or an app screen
+instead of a building. The result must be **one miniature building object and nothing
+else** — no card, no frame, no UI, no text overlay, no map, no pin, no date, no caption.
 
-1. **normal-day**, from the photo only: a small handcrafted miniature (soft clay look)
-   of the building, as a collectible, clear front-facing view. Keep the overall shape,
-   entrance, main windows and doors, colours, and the main sign with its text exactly
-   as in the photo (same language and order). Remove cars, people, cables and clutter.
-   Do not add structures that are not in the photo.
-2. **normal-night**, an edit of image 1 only: the same scene at night. Change only the
-   lighting (dark blue ambient light, warm lit windows and signs, soft glow). Do not
-   redraw, move, crop or resize anything.
-3. **halloween-day**, from the photo only: as image 1, plus a few small Halloween
-   decorations (a pumpkin by the door, orange string lights, a paper bat). Never cover
-   or change the sign.
-4. **halloween-night**, an edit of image 3 only, as in step 2, decorations now lit.
+Shared ending for every prompt (call it BACKDROP):
 
-Look at each result. Retry a stage **once** only for a core failure: wrong building,
-wrong or missing sign text, or a night image that changed the shapes. Small details are
-notes, not reasons to retry. If the retry also fails, show the best one and ask.
+> Show only the miniature object, centred, whole, with empty space around it. Background: one perfectly flat solid magenta colour #FF00FF filling the whole image, no gradient, no floor, no shadow, no reflection, no border. Do not use magenta on the object. No text, labels, captions, frames, cards, maps, icons or UI of any kind, except the lettering that is physically on the building's own sign.
+
+1. **normal-day** — image input: the user's photo only.
+   > A photograph of a small handcrafted collectible scale model of the building in the reference photo, soft clay and painted-wood look, like a miniature on a shelf. Straight front view of the facade. Keep the building's shape, entrance, windows, doors and colours, and copy the main shop sign exactly as it appears, same letters and language. Leave out people, cars, bicycles, cables, street signs and the street itself. Do not add anything that is not part of the building. BACKDROP
+2. **normal-night** — image input: image 1 only.
+   > Relight this exact miniature as night: dark blue ambient light, warm glowing windows and sign. Keep every shape, the camera, the framing, the sign lettering and the magenta background exactly the same; change only the lighting on the object. BACKDROP
+3. **halloween-day** — image input: the user's photo only.
+   > Same as a small handcrafted collectible scale model of the building in the reference photo (front view, same shape, windows, doors, colours, and the main sign copied exactly), decorated for Halloween with a few small additions: a carved pumpkin by the door, a string of orange lights, one paper bat. Decorations stay small and never cover the sign. No people, cars or street. BACKDROP
+4. **halloween-night** — image input: image 3 only.
+   > Relight this exact decorated miniature as night: dark blue ambient light, glowing windows, sign, pumpkin and string lights. Keep every shape, the framing, the sign and the magenta background the same; change only the lighting. BACKDROP
+
+After each image, look at it before going on. **Core failures** (retry that stage once
+with a short correction, e.g. "only the building model, no card or text"): not a single
+miniature building; a card, screen, map or caption; wrong building; sign text wrong or
+missing; night changed the shapes; background not flat magenta. Anything smaller is a
+note for the review. If the retry also fails, show both attempts, say which rule they
+broke, and ask the user (offer to try again with a clearer photo).
+
+Do not research or guess the location (city, branch, address) from the photo. The
+place name is what the user says or what the sign clearly reads; everything else stays
+unknown.
 
 ## 3. Prepare and check (in your Python sandbox)
 

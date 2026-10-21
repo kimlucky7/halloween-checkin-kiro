@@ -10,6 +10,7 @@ import process from "node:process";
 import { unstable_dev } from "wrangler";
 
 import { createClient } from "../pipeline/client.js";
+import { sha256Hex as sha256 } from "../worker/halloween/domain/canonical.js";
 import { syntheticRaw } from "../pipeline/synthetic.js";
 import { preparePair } from "../pipeline/prepare.js";
 import { approveReviewed, prepareReview, publishApproved, submitForReview } from "../pipeline/workflow.js";
@@ -27,7 +28,7 @@ const check = (name, ok, detail = "") => {
 let worker;
 try {
   let migrate = { status: 0 };
-  for (const file of ["migrations/0002_halloween_checkin.sql", "migrations/0003_chatgpt_plugin.sql"]) {
+  for (const file of ["migrations/0002_halloween_checkin.sql", "migrations/0003_chatgpt_plugin.sql", "migrations/0004_single_image_editions.sql"]) {
     if (migrate.status !== 0) break;
     migrate = spawnSync(
       "npx",
@@ -83,6 +84,32 @@ try {
   check("one check-in with two independent editions", list.length === 1 && list[0].variants.length === 2, JSON.stringify(list.map((c) => c.variants.map((v) => v.theme))));
   const leaked = JSON.stringify(list);
   check("public projection has no private fields", !/owner|media\/|payloadHash|validator|approval/i.test(leaked.replace(/\/media\//g, "")));
+
+  // Two pictures per place: normal carries only a day image, Halloween only a night image.
+  {
+    const day = (await preparePair({ day: await syntheticRaw({ lighting: "day", theme: "normal" }), night: await syntheticRaw({ lighting: "night", theme: "normal" }) })).day;
+    const night = (await preparePair({ day: await syntheticRaw({ lighting: "day", theme: "halloween" }), night: await syntheticRaw({ lighting: "night", theme: "halloween" }) })).night;
+    const one = async (theme, slot, bytes, extra = {}) => {
+      const rev = await client.register({
+        theme, text: "at the two-picture cafe", place: { name: "Two-Picture Cafe (demo)" }, companions: [], differences: theme === "halloween" ? ["pumpkin added"] : [],
+        images: { [slot]: { sha256: await sha256(bytes), bytes: bytes.length } }, validator: { version: "e2e", passed: true }, ...extra,
+      });
+      const review = await client.putMedia(rev.revisionId, slot, bytes);
+      const approval = await client.approve(rev.revisionId, review.payloadHash);
+      return client.publish(rev.revisionId, { idempotencyKey: `e2e-two-picture-${theme}`, payloadHash: review.payloadHash, approvalId: approval.approvalId });
+    };
+    const n = await one("normal", "day", day);
+    const h = await one("halloween", "night", night, { linkCheckinId: n.checkinId });
+    const place = (await client.listPublic()).find((c) => c.id === n.checkinId);
+    const byTheme = Object.fromEntries((place?.variants ?? []).map((v) => [v.theme, v]));
+    check("one picture per edition publishes (normal day, Halloween night)",
+      h.state === "published" && h.checkinId === n.checkinId && Boolean(byTheme.normal?.day) && byTheme.normal?.night === null && byTheme.halloween?.day === null && Boolean(byTheme.halloween?.night),
+      JSON.stringify(place?.variants)?.slice(0, 200));
+    const pathOf = (u) => new URL(u, base).pathname;
+    const nightRes = await worker.fetch(pathOf(byTheme.halloween.night));
+    const missing = await worker.fetch(pathOf(byTheme.normal.day).replace("day.png", "night.png"));
+    check("the Halloween night picture is served and a missing lighting is a 404", nightRes.status === 200 && missing.status === 404, `${nightRes.status} ${missing.status}`);
+  }
 
   // ---- ChatGPT plugin: OAuth sign-in, then MCP over the issued token ----
   // Absolute URLs: OAuth metadata is built from the request origin.

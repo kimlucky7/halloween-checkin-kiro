@@ -8,7 +8,7 @@
 //   get_checkin_status        → state of a revision, for recovery after a timeout
 //   list_checkins             → what is public now
 import { sha256Hex } from "./domain/canonical.js";
-import { MAX_IMAGE_BYTES, ValidationError } from "./domain/schema.js";
+import { MAX_IMAGE_BYTES, REQUIRED_SLOT, SLOTS, ValidationError } from "./domain/schema.js";
 import { TransitionError } from "./domain/state.js";
 import { downloadFile, FileError } from "./files.js";
 import { createService, HttpError } from "./service.js";
@@ -30,7 +30,7 @@ export const TOOLS = [
     name: "submit_checkin_for_review",
     title: "Submit a check-in for review",
     description:
-      "Register one edition (normal or halloween) of a place for review. Use only after the halloween-checkin skill prepared and validated the exact final pair: two 720×720 transparent RGBA PNG files, day and night. Nothing becomes public. Returns a revision_id and payload_hash to show the user. For the Halloween edition of a place whose normal edition was just submitted, pass that normal revision as link_revision_id.",
+      "Register one edition of a place for review. Use only after the halloween-checkin skill prepared and validated the exact final file: a 720×720 transparent RGBA PNG. The normal edition takes day_image (the day picture); the Halloween edition takes night_image (the Halloween night picture). Nothing becomes public. Returns a revision_id and payload_hash to show the user. For the Halloween edition of a place whose normal edition was just submitted, pass that normal revision as link_revision_id.",
     inputSchema: {
       type: "object",
       $defs: { File: FILE },
@@ -46,10 +46,10 @@ export const TOOLS = [
         link_revision_id: nullable({ type: "string", description: "For a Halloween edition: the normal revision of the same place." }),
         link_checkin_id: nullable({ type: "string", description: "For a Halloween edition of a place that is already published." }),
         validator_version: { type: "string", description: "Version string printed by the skill's prepare script." },
-        day_image: { $ref: "#/$defs/File" },
-        night_image: { $ref: "#/$defs/File" },
+        day_image: { $ref: "#/$defs/File", description: "Required for theme normal: the prepared day picture." },
+        night_image: { $ref: "#/$defs/File", description: "Required for theme halloween: the prepared Halloween night picture." },
       },
-      required: ["theme", "text", "validator_version", "day_image", "night_image"],
+      required: ["theme", "text", "validator_version"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -112,11 +112,16 @@ async function callTool(name, args, { service, ownerId, request, fetchImpl, file
   const a = args && typeof args === "object" ? args : {};
   switch (name) {
     case "submit_checkin_for_review": {
-      const [day, night] = await Promise.all([
-        downloadFile(a.day_image, { label: "day_image", maxBytes: MAX_IMAGE_BYTES, fetchImpl, hosts: fileHosts }),
-        downloadFile(a.night_image, { label: "night_image", maxBytes: MAX_IMAGE_BYTES, fetchImpl, hosts: fileHosts }),
-      ]);
+      // Each edition carries the one picture the site shows for it.
+      const want = REQUIRED_SLOT[a.theme];
+      if (!want) return toolErr("invalid_input", "theme must be normal or halloween");
+      if (!a[`${want}_image`]) return toolErr("invalid_input", `the ${a.theme} edition needs ${want}_image`);
+      const slots = SLOTS.filter((s) => a[`${s}_image`]);
+      const files = Object.fromEntries(await Promise.all(slots.map(async (s) => [s,
+        await downloadFile(a[`${s}_image`], { label: `${s}_image`, maxBytes: MAX_IMAGE_BYTES, fetchImpl, hosts: fileHosts })])));
       const place = a.place_name || a.place_address ? { name: a.place_name ?? null, address: a.place_address ?? null } : null;
+      const images = {};
+      for (const s of slots) images[s] = { sha256: await sha256Hex(files[s]), bytes: files[s].length };
       const input = {
         theme: a.theme,
         text: a.text,
@@ -125,18 +130,15 @@ async function callTool(name, args, { service, ownerId, request, fetchImpl, file
         capturedAtSource: a.captured_at ? a.captured_at_source : null,
         companions: a.companions ?? [],
         differences: a.differences ?? [],
-        images: {
-          day: { sha256: await sha256Hex(day), bytes: day.length },
-          night: { sha256: await sha256Hex(night), bytes: night.length },
-        },
+        images,
         // The skill's prepare script reports pass/fail; it refuses to produce files on failure.
         validator: { version: String(a.validator_version || "unknown"), passed: true },
         ...(a.link_checkin_id ? { linkCheckinId: a.link_checkin_id } : {}),
         ...(a.link_revision_id ? { linkRevisionId: a.link_revision_id } : {}),
       };
       const created = await service.createRevision(ownerId, input);
-      await service.putMedia(ownerId, created.revisionId, "day", day);
-      const review = await service.putMedia(ownerId, created.revisionId, "night", night);
+      let review = created;
+      for (const s of slots) review = await service.putMedia(ownerId, created.revisionId, s, files[s]);
       const data = {
         ok: true,
         revision_id: review.revisionId,
@@ -150,7 +152,7 @@ async function callTool(name, args, { service, ownerId, request, fetchImpl, file
           companions: review.payload.companions,
           differences: review.payload.differences,
         },
-        images: { day_sha256: review.payload.images.day.sha256, night_sha256: review.payload.images.night.sha256 },
+        images: Object.fromEntries(slots.map((s) => [`${s}_sha256`, review.payload.images[s].sha256])),
         target: { site: siteUrl(request), visibility: review.payload.visibility },
         link_revision_id: review.linkRevisionId,
         link_checkin_id: review.linkCheckinId,

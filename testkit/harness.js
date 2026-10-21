@@ -13,7 +13,7 @@ import { VALIDATOR_VERSION } from "../pipeline/validate.js";
 export const PROJECT = "halloween-checkin-test";
 export const TOKEN = "test-owner-token-not-a-secret-0001";
 
-export function createD1(sqlFiles = ["migrations/0002_halloween_checkin.sql", "migrations/0003_chatgpt_plugin.sql"]) {
+export function createD1(sqlFiles = ["migrations/0002_halloween_checkin.sql", "migrations/0003_chatgpt_plugin.sql", "migrations/0004_single_image_editions.sql"]) {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
   for (const f of [].concat(sqlFiles)) sqlite.exec(readFileSync(new URL("../" + f, import.meta.url), "utf8"));

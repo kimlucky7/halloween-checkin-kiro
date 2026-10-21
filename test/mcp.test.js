@@ -225,3 +225,43 @@ test("D1-backed KV: get/put/delete, JSON, expiry, metadata, prefix listing with 
   await kv.sweep();
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM hc_oauth_kv").get().n, 3);
 });
+
+test("two pictures per place: normal carries only a day image, Halloween only a night image", async () => {
+  const s = setup();
+  const normalPair = await syntheticPair({ theme: "normal" });
+  const hallPair = await syntheticPair({ theme: "halloween" });
+  const base = { text: "at the test cafe", place_name: "Test Cafe", validator_version: "prepare-py/3" };
+
+  // Each edition must bring the picture the site shows for it.
+  const noDay = await s.call("submit_checkin_for_review", { ...base, theme: "normal", night_image: s.files.add(normalPair.night) });
+  assert.equal(noDay.structuredContent.error, "invalid_input");
+  assert.match(noDay.structuredContent.detail, /day_image/);
+  const noNight = await s.call("submit_checkin_for_review", { ...base, theme: "halloween", day_image: s.files.add(hallPair.day) });
+  assert.match(noNight.structuredContent.detail, /night_image/);
+
+  const normal = (await s.call("submit_checkin_for_review", { ...base, theme: "normal", day_image: s.files.add(normalPair.day) })).structuredContent;
+  assert.equal(normal.state, "review_ready", JSON.stringify(normal));
+  assert.deepEqual(Object.keys(normal.images), ["day_sha256"]);
+  const hall = (await s.call("submit_checkin_for_review", {
+    ...base, theme: "halloween", link_revision_id: normal.revision_id, differences: ["pumpkin added"], night_image: s.files.add(hallPair.night),
+  })).structuredContent;
+  assert.equal(hall.state, "review_ready", JSON.stringify(hall));
+  assert.deepEqual(Object.keys(hall.images), ["night_sha256"]);
+
+  await s.call("publish_checkin", { revision_id: normal.revision_id, payload_hash: normal.payload_hash });
+  const h = (await s.call("publish_checkin", { revision_id: hall.revision_id, payload_hash: hall.payload_hash })).structuredContent;
+  assert.equal(h.state, "published", JSON.stringify(h));
+
+  const [place] = await s.service.listPublic(ORIGIN);
+  const byTheme = Object.fromEntries(place.variants.map((v) => [v.theme, v]));
+  assert.match(byTheme.normal.day, /\/day\.png$/);
+  assert.equal(byTheme.normal.night, null, "no invented normal night picture");
+  assert.equal(byTheme.halloween.day, null, "no invented Halloween day picture");
+  assert.match(byTheme.halloween.night, /\/night\.png$/);
+  // Only stored pictures are served; the missing lighting is simply not there.
+  const id = (u) => u.split("/media/")[1].split("/")[0];
+  assert.ok(await s.service.getPublicMedia(id(byTheme.normal.day), "day"));
+  assert.equal(await s.service.getPublicMedia(id(byTheme.normal.day), "night"), null);
+  assert.equal(await s.service.getPublicMedia(id(byTheme.halloween.night), "day"), null);
+  assert.ok(await s.service.getPublicMedia(id(byTheme.halloween.night), "night"));
+});

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
 import { createApp, createD1, createBucket, registerSynthetic, reviewReady, approved, uploadBoth, newKey, TOKEN } from "../testkit/harness.js";
 import { sha256Hex } from "../worker/halloween/domain/canonical.js";
 
@@ -391,4 +392,23 @@ test("a database batch is atomic: a failing statement leaves no partial rows", a
   app.db.sqlite.exec("DROP TRIGGER block_variants");
   assert.equal((await publish(app, r, key)).status, 200);
   assert.equal(count(app, "hc_checkins"), 1);
+});
+
+test("migration 0004 keeps existing two-image variants and allows one-image variants", () => {
+  // Apply 0002 + 0003, publish-like rows with both images, then 0004.
+  const db = createD1(["migrations/0002_halloween_checkin.sql", "migrations/0003_chatgpt_plugin.sql"]);
+  const q = (sql, ...p) => db.sqlite.prepare(sql).run(...p);
+  q("INSERT INTO hc_drafts VALUES ('d1','o','p','published','r1','t','t')");
+  q("INSERT INTO hc_revisions (id, draft_id, seq, theme, payload_json, payload_hash, created_at) VALUES ('r1','d1',1,'normal','{}','h','t')");
+  q("INSERT INTO hc_revisions (id, draft_id, seq, theme, payload_json, payload_hash, created_at) VALUES ('r2','d1',2,'halloween','{}','h','t')");
+  q("INSERT INTO hc_checkins VALUES ('ck-legacy','o','at X','{}',NULL,NULL,'[]','t')");
+  q("INSERT INTO hc_variants VALUES ('ck-legacy','normal','r1','at X','[]','media/r1/day.png','media/r1/night.png','a','b','t')");
+  db.sqlite.exec(readFileSync(new URL("../migrations/0004_single_image_editions.sql", import.meta.url), "utf8"));
+  const row = db.sqlite.prepare("SELECT * FROM hc_variants WHERE revision_id = 'r1'").get();
+  assert.deepEqual([row.day_key, row.night_key, row.day_sha256, row.night_sha256], ["media/r1/day.png", "media/r1/night.png", "a", "b"]);
+  // One lighting is fine; none, or a key without its hash, is refused.
+  q("INSERT INTO hc_variants VALUES ('ck-legacy','halloween','r2','at X','[]',NULL,'media/r2/night.png',NULL,'c','t')");
+  assert.throws(() => q("INSERT INTO hc_variants VALUES ('ck-legacy','x','r9','at X','[]',NULL,NULL,NULL,NULL,'t')"));
+  assert.throws(() => q("INSERT INTO hc_variants VALUES ('ck-legacy','y','r8','at X','[]','k',NULL,NULL,NULL,'t')"));
+  assert.equal(db.sqlite.prepare("PRAGMA foreign_key_check").all().length, 0);
 });

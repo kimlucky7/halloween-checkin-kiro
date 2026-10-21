@@ -1,6 +1,6 @@
 ---
 name: halloween-checkin
-description: "Turn the user's photo of a real place into a reviewed day/night miniature building, with a Halloween edition, and publish it to their Halloween Check-in site only after they clearly ask. Use when the user says checkin, check in, 打卡, checkin Halloween or 万圣节打卡 with a photo."
+description: "Turn the user's photo of a real place into a reviewed miniature building — a normal day picture and a Halloween night picture — and publish it to their Halloween Check-in site only after they clearly ask. Use when the user says checkin, check in, 打卡, checkin Halloween or 万圣节打卡 with a photo."
 ---
 
 # Halloween Check-in (ChatGPT)
@@ -17,81 +17,81 @@ public until the user clearly asks you to publish.
 - One photo of a real place that the user is allowed to use. If there is no photo or
   several candidates, ask one short question.
 - Place name: use what the user says, or the sign that is clearly readable in the photo.
-  Never guess an address, city or coordinates.
+  Never guess an address, city or coordinates. If the user's name and the sign differ,
+  ask which one is right before generating.
 - Capture time: only from the photo's EXIF (read it with Pillow) or what the user says,
   with a time zone offset. Otherwise leave it unknown.
 - Companions: only names the user gives.
 - Always make both editions: **normal** and **halloween**.
 
-## 2. Generate four images, one at a time
+## 2. Generate two pictures, one at a time
 
-The site needs a day and a night picture for each edition: day mode shows the normal
-model, night mode shows the Halloween model (or the normal night when there is none).
-All four are one chain of edits, so the model never changes size or position:
+The site has two modes: day mode shows the normal edition's day picture, night mode
+shows the Halloween edition's night picture. So a place needs exactly two pictures,
+and the second is an edit of the first, so the model never changes size or position:
 
 ```
-photo → normal-day → normal-night        (relight)
-              └────→ halloween-day       (decorate normal-day) → halloween-night (relight)
+photo → normal-day → halloween-night   (same model + small decorations + night lighting)
 ```
 
 Read the prompt files and use them **word for word**:
 
-- [references/day-prompt.md](references/day-prompt.md) — normal-day (from the user's photo) and halloween-day (from the accepted normal-day)
-- [references/night-prompt.md](references/night-prompt.md) — normal-night and halloween-night, each from its accepted day image only
+- [references/day-prompt.md](references/day-prompt.md) — normal-day, from the user's photo
+- [references/night-prompt.md](references/night-prompt.md) — halloween-night, from the accepted normal-day only
 
-Order: normal-day → check → normal-night → check → halloween-day → check → halloween-night → check.
-If your turn ends after an image, say which image is next and ask the user to reply `继续`.
+Order: normal-day → check → halloween-night → check.
+If your turn ends after the first picture, say that halloween-night is next and ask the
+user to reply `继续`.
 Never put "check-in", "打卡", a date, an address, a map or a place name into an image
 prompt; the result must be one miniature building and nothing else (no card, frame, UI,
 caption, map or pin).
 
-**Core failures** (retry that image once with a short correction, e.g. "only the building
+**Core failures** (retry that picture once with a short correction, e.g. "only the building
 model, no card or text"): not a single miniature building; a card, screen, map or caption;
-wrong building; sign text wrong or missing; night changed the shapes; background not flat
-magenta. Anything smaller is a note for the review. If the retry also fails, show both
-attempts, say which rule they broke, and ask the user.
+wrong building; sign text wrong or missing; the night picture changed or widened the
+building; background not flat magenta. Anything smaller is a note for the review. If the
+retry also fails, show both attempts, say which rule they broke, and ask the user.
 
 Do not research or guess the location (city, branch, address) from the photo. The place
 name is what the user says or what the sign clearly reads; everything else stays unknown.
 
 ## 3. Prepare and check (in your Python sandbox)
 
-Save the four images, then run the script **once** for all of them, so both editions
-get one shared size and position:
+Save both pictures, then run the script **once** for both, so they share one size and
+position:
 
 ```bash
-python scripts/prepare.py --day normal-day.png --night normal-night.png \
-  --halloween-day halloween-day.png --halloween-night halloween-night.png --out-dir out
+python scripts/prepare.py --day normal-day.png --halloween-night halloween-night.png --out-dir out
 ```
 
-It prints JSON. `"ok": true` means `out/normal/` and `out/halloween/` each hold the final
-720×720 transparent `day.png` and `night.png`; note `validator_version`. `"ok": false`
-explains why: `backdrop_not_flat` → regenerate that image with a flatter magenta
-background; `halloween_redrawn` → regenerate halloween-day as an edit of the accepted
-normal-day. Never edit the script's limits to make it pass.
+It prints JSON. `"ok": true` means `out/normal/day.png` and `out/halloween/night.png` are
+the final 720×720 transparent files; note `validator_version`. `"ok": false` explains
+why: `backdrop_not_flat` → regenerate that picture with a flatter magenta background;
+`halloween_redrawn` → regenerate halloween-night as an edit of the accepted normal-day.
+Never edit the script's limits to make it pass.
 
-Then **look** at the prepared images and the 360/240 previews yourself and report each point:
+Then **look** at the prepared pictures and the 360/240 previews yourself and report each point:
 
-- the main sign name is exact and still readable in the 240px preview (if it is too faint or small there, regenerate that day image once asking for a larger, higher-contrast sign);
-- the night image is the same building in the same position, only relit;
-- the Halloween model is the normal model with decorations, not a redrawn or wider building;
-- all four are the same size and stand on the same line (the script enforces this; say so if anything looks off);
+- the main sign name is exact and still readable in the 240px preview (if it is too faint or small there, regenerate normal-day once asking for a larger, higher-contrast sign);
+- the Halloween night picture is the same building in the same position, with small decorations and night lighting, not a redrawn or wider building;
+- both are the same size and stand on the same line (the script enforces this; say so if anything looks off);
 - nothing important is cut off or turned transparent.
 
 The script cannot judge the sign or the building; you must.
 
 ## 4. Submit for review (nothing becomes public)
 
-Call `submit_checkin_for_review` for the normal edition with the files
-`out/normal/day.png` and `out/normal/night.png`, `theme: "normal"`, the text
-(for example `at Sushiro`), place name, capture time only if known, companions,
-`differences` (notable simplifications), and `validator_version`.
+Call `submit_checkin_for_review` for the normal edition with `day_image` =
+`out/normal/day.png`, `theme: "normal"`, the text (for example `at Sushiro`), place name,
+capture time only if known, companions, `differences` (notable simplifications), and
+`validator_version`.
 
-Then call it for the Halloween edition with `out/halloween/*.png`, `theme: "halloween"`,
-`link_revision_id` set to the normal edition's `revision_id`, and `differences` listing
-every decoration you added (they are creative additions, not facts about the place).
+Then call it for the Halloween edition with `night_image` = `out/halloween/night.png`,
+`theme: "halloween"`, `link_revision_id` set to the normal edition's `revision_id`, and
+`differences` listing every decoration you added (they are creative additions, not facts
+about the place).
 
-Show the user a review package: the four final pictures, the exact public text and
+Show the user a review package: the two final pictures, the exact public text and
 place, the capture time (or "unknown"), companions, differences, the site the tools
 returned, and both payload hashes. Then **stop and wait**.
 

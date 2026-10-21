@@ -2,7 +2,7 @@
 
 把去过的地方，收藏成会随天色亮灯的微缩小楼。说一句 `checkin`，再加一句 `Halloween`，它还会换上一套万圣节装扮。
 
-在线演示：https://halloween-checkin.a512884335.workers.dev （目前只有一条用代码画的合成演示记录）
+在线演示：https://halloween-checkin.a512884335.workers.dev
 
 参加 AWS「Kiro 鬼点子计划」线上赛。
 
@@ -114,3 +114,7 @@ npm run hc -- publish --dir ws      # 发布，并核验公开图片的状态、
 - "主页上一句话告诉你我最近在哪里，配一张那个地方的小图"这个想法，来自设计师 [Peng Zheng 的个人主页](https://www.pengzhe.ng/)，也来自作者早先受它启发做的 August Check-in。本仓库的代码、样式、文案、提示词和素材都是为本项目重新编写的，没有复制它们。
 - 依赖：[Astro](https://astro.build)、[sharp](https://sharp.pixelplumbing.com)、[Wrangler](https://developers.cloudflare.com/workers/wrangler/)。
 - 演示素材是代码画的合成小房子，不对应真实地点。
+
+## 许可证
+
+代码以 [MIT](LICENSE) 许可发布。线上展示的建筑图片由 AI 图像工具生成，不在代码许可范围内。

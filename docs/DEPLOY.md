@@ -11,7 +11,7 @@ The owner chose an existing Cloudflare account that also hosts other, unrelated 
 
 The account id is not stored in the repository; export `CLOUDFLARE_ACCOUNT_ID` when running wrangler. The resources share the account's plan limits and billing with the other projects. To remove everything: delete the Worker, the D1 database and the R2 bucket by those exact names.
 
-The demo contains one synthetic check-in (`ck-462c1a3b8d40`, normal + halloween editions). The Worker, D1 database and R2 bucket were first deployed from the predecessor development repository and are now deployed from this one; data and bindings are unchanged. There is no delete feature; removing it means clearing the `hc_*` tables in this project's own D1 database.
+The synthetic demo check-in (`ck-462c1a3b8d40`) was deleted at the owner's request on 2026-10-15: its D1 rows (variants, check-in, operations, approvals, revisions, drafts) and its four R2 objects. The Worker, D1 database and R2 bucket were first deployed from the predecessor development repository and are now deployed from this one; data and bindings are unchanged. There is no delete feature; removing it means clearing the `hc_*` tables in this project's own D1 database.
 
 ## Imported records (2026-10-12)
 

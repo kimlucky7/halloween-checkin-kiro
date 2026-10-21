@@ -3,6 +3,7 @@
   "type": "module",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Photos of real places turned into reviewed day/night miniature buildings, with a Halloween edition.",
   "engines": {
     "node": ">=22.12.0"

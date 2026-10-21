@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "halloween-checkin": {
+      "type": "streamable-http",
+      "url": "https://halloween-checkin.a512884335.workers.dev/mcp"
+    }
+  }
+}

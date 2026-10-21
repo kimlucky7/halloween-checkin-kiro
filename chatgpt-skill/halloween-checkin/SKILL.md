@@ -5,6 +5,8 @@ description: "Turn the user's photo of a real place into a reviewed day/night mi
 
 # Halloween Check-in (ChatGPT)
 
+When this skill is used, follow these steps in order and do not improvise another check-in format (no location lookup, no check-in cards, no claims that something was saved before a tool returned it). If another check-in skill is also installed (for example an older `august-checkin`), use this one for Halloween Check-in and do not mix their steps or tools.
+
 You generate the pictures with your own image tool. The prepare script in this skill
 cuts them out and checks them. The **Halloween Check-in** plugin's tools receive the
 finished files and publish them. The tools never generate images, and nothing is
@@ -23,26 +25,24 @@ public until the user clearly asks you to publish.
 
 ## 2. Generate four images, one at a time
 
-Each a square image (1024×1024 if you can choose). Every image: the building on a
-perfectly flat, uniform magenta background (#FF00FF), no gradient, no ground, no
-shadow, no reflection, and no magenta anywhere on the building.
+Read the prompt files and use them **word for word**:
 
-1. **normal-day**, from the photo only: a small handcrafted miniature (soft clay look)
-   of the building, as a collectible, clear front-facing view. Keep the overall shape,
-   entrance, main windows and doors, colours, and the main sign with its text exactly
-   as in the photo (same language and order). Remove cars, people, cables and clutter.
-   Do not add structures that are not in the photo.
-2. **normal-night**, an edit of image 1 only: the same scene at night. Change only the
-   lighting (dark blue ambient light, warm lit windows and signs, soft glow). Do not
-   redraw, move, crop or resize anything.
-3. **halloween-day**, from the photo only: as image 1, plus a few small Halloween
-   decorations (a pumpkin by the door, orange string lights, a paper bat). Never cover
-   or change the sign.
-4. **halloween-night**, an edit of image 3 only, as in step 2, decorations now lit.
+- [references/day-prompt.md](references/day-prompt.md) — normal-day and halloween-day, from the user's photo
+- [references/night-prompt.md](references/night-prompt.md) — normal-night and halloween-night, each from its accepted day image only
 
-Look at each result. Retry a stage **once** only for a core failure: wrong building,
-wrong or missing sign text, or a night image that changed the shapes. Small details are
-notes, not reasons to retry. If the retry also fails, show the best one and ask.
+Order: normal-day → check → normal-night → check → halloween-day → check → halloween-night → check.
+Never put "check-in", "打卡", a date, an address, a map or a place name into an image
+prompt; the result must be one miniature building and nothing else (no card, frame, UI,
+caption, map or pin).
+
+**Core failures** (retry that image once with a short correction, e.g. "only the building
+model, no card or text"): not a single miniature building; a card, screen, map or caption;
+wrong building; sign text wrong or missing; night changed the shapes; background not flat
+magenta. Anything smaller is a note for the review. If the retry also fails, show both
+attempts, say which rule they broke, and ask the user.
+
+Do not research or guess the location (city, branch, address) from the photo. The place
+name is what the user says or what the sign clearly reads; everything else stays unknown.
 
 ## 3. Prepare and check (in your Python sandbox)
 
@@ -58,9 +58,14 @@ It prints JSON. `"ok": true` means `out/<edition>/day.png` and `night.png` are t
 says `backdrop_not_flat`, regenerate that image with a flatter magenta background.
 Never edit the script's limits to make it pass.
 
-Then **look** at the prepared images and the 360/240 previews yourself: is the sign
-readable, is the night the same building, are there cut-off parts? The script cannot
-judge that.
+Then **look** at the prepared images and the 360/240 previews yourself and report each point:
+
+- the main sign name is exact and still readable in the 240px preview (if it is too faint or small there, regenerate that day image once asking for a larger, higher-contrast sign);
+- the night image is the same building in the same position, only relit;
+- day and night of both editions are the same size and stand on the same line (the script enforces this; say so if anything looks off);
+- nothing important is cut off or turned transparent.
+
+The script cannot judge the sign or the building; you must.
 
 ## 4. Submit for review (nothing becomes public)
 

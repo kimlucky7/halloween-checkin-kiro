@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "halloween-checkin",
+  "version": "1.0.0",
+  "description": "Turn a photo of a real place into a reviewed day/night miniature building with a Halloween edition, and publish it to your Halloween Check-in site.",
+  "author": { "name": "Kim Leung", "url": "https://github.com/kimlucky7" },
+  "homepage": "https://halloween-checkin.a512884335.workers.dev",
+  "repository": "https://github.com/kimlucky7/halloween-checkin-kiro",
+  "license": "MIT",
+  "keywords": ["halloween", "check-in", "miniature", "places"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Halloween Check-in",
+        "shortDescription": "Photo → day/night miniature, with a Halloween edition",
+        "longDescription": "Upload a photo of a place and say “checkin Halloween”. The skill makes four pictures, cuts them out and checks them; the tools submit them for your review and publish only when you ask.",
+        "developerName": "Kim Leung",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://halloween-checkin.a512884335.workers.dev",
+        "defaultPrompt": ["checkin Halloween — here is my photo of this place"],
+        "brandColor": "#F97316"
+      }
+    }
+  }
+}

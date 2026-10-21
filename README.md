@@ -36,7 +36,10 @@ Skill 会：
    - Authentication：OAuth（不用填 client id，ChatGPT 会自动注册）
    - 选 Create as a plugin，然后安装这个插件。
 2. **授权**：ChatGPT 会打开本站的授权页，输入你的 owner 令牌（本地 `.env.local` 里的 `HC_TOKEN`）点"允许"。令牌只在这个页面输入，不要贴进聊天。
-3. **加 Skill**：在 ChatGPT 的 Skills 里上传 `chatgpt-skill/dist/halloween-checkin-skill.zip`（源文件在 `chatgpt-skill/halloween-checkin/`）。
+3. **加 Skill**：先运行 `npm run chatgpt:zip`，生成两个文件，二选一：
+   - `chatgpt-skill/dist/halloween-checkin-plugin.zip`：完整插件包（`plugin.json` + `mcp.json` + `skills/`），在 **Plugins** 里上传；
+   - `chatgpt-skill/dist/halloween-checkin-skill.zip`：只有 Skill，在 **Skills** 里上传（MCP 按第 1 步单独添加）。
+   在 Plugins 里上传单独的 Skill zip 会提示「无法添加插件」，因为插件包必须带 `plugin.json`。
 4. **使用**：新开对话，`@` 选这个插件，上传照片说 `checkin Halloween`。它会出四张图（普通/万圣节 × 白天/夜晚），抠图校验后给你看审核包并停下；你说"发布"才发布。
 
 工具：`submit_checkin_for_review`（只登记待审核，不公开）、`publish_checkin`（按审核时的哈希批准并发布，可安全重试）、`get_checkin_status`、`list_checkins`。工具只接收 ChatGPT 文件存储域名上的 HTTPS 文件，每一跳重定向都会再检查，并限制大小。OAuth 记录存在本项目自己的 D1 里（`hc_oauth_kv`）。

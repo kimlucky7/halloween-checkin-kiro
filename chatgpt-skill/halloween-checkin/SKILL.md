@@ -5,7 +5,7 @@ description: "Turn the user's photo of a real place into a reviewed day/night mi
 
 # Halloween Check-in (ChatGPT)
 
-When this skill is used, follow these steps in order and do not improvise another check-in format (no location lookup, no check-in cards, no claims that something was saved before a tool returned it).
+When this skill is used, follow these steps in order and do not improvise another check-in format (no location lookup, no check-in cards, no claims that something was saved before a tool returned it). If another check-in skill is also installed (for example an older `august-checkin`), use this one for Halloween Check-in and do not mix their steps or tools.
 
 You generate the pictures with your own image tool. The prepare script in this skill
 cuts them out and checks them. The **Halloween Check-in** plugin's tools receive the
@@ -36,7 +36,7 @@ Shared ending for every prompt (call it BACKDROP):
 > Show only the miniature object, centred, whole, with empty space around it. Background: one perfectly flat solid magenta colour #FF00FF filling the whole image, no gradient, no floor, no shadow, no reflection, no border. Do not use magenta on the object. No text, labels, captions, frames, cards, maps, icons or UI of any kind, except the lettering that is physically on the building's own sign.
 
 1. **normal-day** — image input: the user's photo only.
-   > A photograph of a small handcrafted collectible scale model of the building in the reference photo, soft clay and painted-wood look, like a miniature on a shelf. Straight front view of the facade. Keep the building's shape, entrance, windows, doors and colours, and copy the main shop sign exactly as it appears, same letters and language. Leave out people, cars, bicycles, cables, street signs and the street itself. Do not add anything that is not part of the building. BACKDROP
+   > A photograph of a small handcrafted collectible scale model of the building in the reference photo, soft clay and painted-wood look, like a miniature on a shelf. Straight front view of the facade. Keep the building's shape, entrance, windows, doors and colours, and copy the main shop sign exactly as it appears, same letters and language; make the sign large, high-contrast and crisp so the name stays readable when the picture is shown small. Leave out people, cars, bicycles, cables, street signs and the street itself. Do not add anything that is not part of the building. BACKDROP
 2. **normal-night** — image input: image 1 only.
    > Relight this exact miniature as night: dark blue ambient light, warm glowing windows and sign. Keep every shape, the camera, the framing, the sign lettering and the magenta background exactly the same; change only the lighting on the object. BACKDROP
 3. **halloween-day** — image input: the user's photo only.
@@ -69,9 +69,14 @@ It prints JSON. `"ok": true` means `out/<edition>/day.png` and `night.png` are t
 says `backdrop_not_flat`, regenerate that image with a flatter magenta background.
 Never edit the script's limits to make it pass.
 
-Then **look** at the prepared images and the 360/240 previews yourself: is the sign
-readable, is the night the same building, are there cut-off parts? The script cannot
-judge that.
+Then **look** at the prepared images and the 360/240 previews yourself and report each point:
+
+- the main sign name is exact and still readable in the 240px preview (if it is too faint or small there, regenerate that day image once asking for a larger, higher-contrast sign);
+- the night image is the same building in the same position, only relit;
+- day and night of both editions are the same size and stand on the same line (the script enforces this; say so if anything looks off);
+- nothing important is cut off or turned transparent.
+
+The script cannot judge the sign or the building; you must.
 
 ## 4. Submit for review (nothing becomes public)
 

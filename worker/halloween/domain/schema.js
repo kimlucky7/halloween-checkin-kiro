@@ -33,7 +33,7 @@ export function validateRevisionInput(input, { project }) {
 
   const allowed = new Set([
     "theme", "text", "place", "capturedAt", "capturedAtSource", "companions",
-    "differences", "images", "validator", "linkCheckinId",
+    "differences", "images", "validator", "linkCheckinId", "linkRevisionId",
   ]);
   for (const key of Object.keys(obj)) if (!allowed.has(key)) fail(key, "is not a recognized field");
 
@@ -99,6 +99,13 @@ export function validateRevisionInput(input, { project }) {
     fail("linkCheckinId", "must be an existing check-in id");
   }
 
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  if (obj.linkRevisionId != null && (typeof obj.linkRevisionId !== "string" || !UUID.test(obj.linkRevisionId))) {
+    fail("linkRevisionId", "must be a revision id");
+  }
+  if (obj.linkRevisionId != null && obj.linkCheckinId != null) fail("linkRevisionId", "use either linkCheckinId or linkRevisionId, not both");
+  if (obj.linkRevisionId != null && theme !== "halloween") fail("linkRevisionId", "only a Halloween edition can join a normal revision");
+
   if (issues.length) throw new ValidationError(issues);
 
   return {
@@ -116,6 +123,7 @@ export function validateRevisionInput(input, { project }) {
       validatorVersion: validator.version,
     },
     linkCheckinId: obj.linkCheckinId ?? null,
+    linkRevisionId: obj.linkRevisionId ?? null,
   };
 }
 

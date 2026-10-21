@@ -125,17 +125,17 @@ export function createHandler({ serviceFor }) {
   };
 }
 
-export function createWorkerHandler() {
-  return createHandler({
-    serviceFor(env) {
-      if (!env.DB || !env.MEDIA) throw new HttpError(503, "storage_not_configured");
-      if (!env.PROJECT_ID) throw new HttpError(503, "project_not_configured");
-      return createService({
-        db: env.DB,
-        media: env.MEDIA,
-        project: env.PROJECT_ID,
-        approvalTtlMs: env.APPROVAL_TTL_MS ? Number(env.APPROVAL_TTL_MS) : undefined,
-      });
-    },
+export function serviceForEnv(env) {
+  if (!env.DB || !env.MEDIA) throw new HttpError(503, "storage_not_configured");
+  if (!env.PROJECT_ID) throw new HttpError(503, "project_not_configured");
+  return createService({
+    db: env.DB,
+    media: env.MEDIA,
+    project: env.PROJECT_ID,
+    approvalTtlMs: env.APPROVAL_TTL_MS ? Number(env.APPROVAL_TTL_MS) : undefined,
   });
+}
+
+export function createWorkerHandler() {
+  return createHandler({ serviceFor: serviceForEnv });
 }

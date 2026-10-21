@@ -1,4 +1,4 @@
-# Day prompts (from the user's photo)
+# Day prompts (normal-day from the user's photo; halloween-day from normal-day)
 
 BACKDROP (ends every prompt, here and in night-prompt.md):
 
@@ -7,7 +7,7 @@ BACKDROP (ends every prompt, here and in night-prompt.md):
 Rules for every day prompt:
 - Send the prompt **exactly** as written, with BACKDROP replaced by the text above. Add nothing else.
 - Never put "check-in", "checkin", "打卡", a date, an address, a map or a place name into the prompt.
-- The only image input is the user's original photo. Never use another place's picture or a style example.
+- normal-day takes only the user's original photo; halloween-day takes only the accepted normal-day image. Never use another place's picture or a style example.
 
 ## normal-day
 
@@ -17,8 +17,9 @@ Image input: the user's photo only.
 
 ## halloween-day
 
-Image input: the user's photo only.
+Image input: the accepted normal-day image only (not the photo). This keeps the model,
+its size and its position identical to the normal edition; only decorations are added.
 
-> Same as a small handcrafted collectible scale model of the building in the reference photo (front view, same shape, windows, doors, colours, and the main sign copied exactly), decorated for Halloween with a few small additions: a carved pumpkin by the door, a string of orange lights, one paper bat. Decorations stay small and never cover the sign. No people, cars or street. BACKDROP
+> Edit this exact miniature: add a few small Halloween decorations — a carved pumpkin by the door, a string of orange lights along the shopfront, one paper bat on the wall. Keep every shape, the camera, the framing, the size, the sign lettering and the magenta background exactly the same; do not redraw or widen the building. Decorations stay small, sit on the building and never cover the sign. BACKDROP
 
 The Halloween decorations are creative additions; list each one in `differences` when submitting.

@@ -266,9 +266,32 @@ function normalizePager() {
   pagerFrame();
 }
 
+// The home-copy twin of a slide, and its neighbours, decoded ahead of the loop jump:
+// a picture that is decoded only after the jump shows as an empty frame (a flash),
+// mostly in Safari, which drops decoded images of slides that were off screen.
+const twinOf = (li) => homeSlide(Number(li.dataset.slide));
+function decodeAround(li) {
+  const slides = [li?.previousElementSibling, li, li?.nextElementSibling].filter(Boolean);
+  return Promise.all(slides.flatMap((s) => [...s.querySelectorAll("img.pic")]).map((img) => {
+    img.loading = "eager";
+    return img.decode?.().catch(() => {});
+  }));
+}
+const centred = (li) => Math.abs(slideCenter(li) - (els.pager.scrollLeft + els.pager.clientWidth / 2)) <= 1;
+// Jump to the home copy only once the twin is decoded and the scroller is at rest
+// on the same slide; otherwise a later idle tick tries again.
+async function settleLoop() {
+  const li = nearestSlide();
+  if (!li || li.dataset.copy === String(HOME)) return;
+  await Promise.race([decodeAround(twinOf(li)), new Promise((r) => setTimeout(r, 400))]);
+  if (pagerDrag.active || nearestSlide() !== li || !centred(li)) return;
+  normalizePager();
+}
+
 let pagerFrameId = 0;
 let pagerIdle = 0;
 let pagerTarget = null;
+let warmedFor = null;
 function onPagerScroll() {
   if (!pagerFrameId) pagerFrameId = requestAnimationFrame(() => {
     pagerFrameId = 0;
@@ -276,6 +299,10 @@ function onPagerScroll() {
   });
   const li = nearestSlide();
   const copy = li ? Number(li.dataset.copy) : HOME;
+  if (li && copy !== HOME && warmedFor !== li) {
+    warmedFor = li;
+    decodeAround(twinOf(li));
+  }
   if (copy === 0 || copy === COPIES - 1) {
     // only when the edge copy is actually reached
     const edge = els.pager.scrollLeft < els.pager.clientWidth || els.pager.scrollLeft > els.pager.scrollWidth - 2 * els.pager.clientWidth;
@@ -284,10 +311,11 @@ function onPagerScroll() {
   clearTimeout(pagerIdle);
   pagerIdle = setTimeout(() => {
     pagerTarget = null;
-    normalizePager();
-    // Safety net: if a browser left the scroller between two slides, finish the snap.
+    // Safety net: if a browser left the scroller between two slides, finish the snap;
+    // the loop jump waits for the next rest after that.
     const li = nearestSlide();
-    if (li && !pagerDrag.active && Math.abs(slideCenter(li) - (els.pager.scrollLeft + els.pager.clientWidth / 2)) > 1) centerSlide(li, "smooth");
+    if (li && !pagerDrag.active && !centred(li)) centerSlide(li, "smooth");
+    else settleLoop();
   }, 160);
 }
 

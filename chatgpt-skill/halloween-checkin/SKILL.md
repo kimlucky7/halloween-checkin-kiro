@@ -25,12 +25,22 @@ public until the user clearly asks you to publish.
 
 ## 2. Generate four images, one at a time
 
+The site needs a day and a night picture for each edition: day mode shows the normal
+model, night mode shows the Halloween model (or the normal night when there is none).
+All four are one chain of edits, so the model never changes size or position:
+
+```
+photo → normal-day → normal-night        (relight)
+              └────→ halloween-day       (decorate normal-day) → halloween-night (relight)
+```
+
 Read the prompt files and use them **word for word**:
 
-- [references/day-prompt.md](references/day-prompt.md) — normal-day and halloween-day, from the user's photo
+- [references/day-prompt.md](references/day-prompt.md) — normal-day (from the user's photo) and halloween-day (from the accepted normal-day)
 - [references/night-prompt.md](references/night-prompt.md) — normal-night and halloween-night, each from its accepted day image only
 
 Order: normal-day → check → normal-night → check → halloween-day → check → halloween-night → check.
+If your turn ends after an image, say which image is next and ask the user to reply `继续`.
 Never put "check-in", "打卡", a date, an address, a map or a place name into an image
 prompt; the result must be one miniature building and nothing else (no card, frame, UI,
 caption, map or pin).
@@ -46,23 +56,26 @@ name is what the user says or what the sign clearly reads; everything else stays
 
 ## 3. Prepare and check (in your Python sandbox)
 
-Save the four images, then run the script once per edition:
+Save the four images, then run the script **once** for all of them, so both editions
+get one shared size and position:
 
 ```bash
-python scripts/prepare.py --day normal-day.png --night normal-night.png --out-dir out/normal
-python scripts/prepare.py --day halloween-day.png --night halloween-night.png --out-dir out/halloween
+python scripts/prepare.py --day normal-day.png --night normal-night.png \
+  --halloween-day halloween-day.png --halloween-night halloween-night.png --out-dir out
 ```
 
-It prints JSON. `"ok": true` means `out/<edition>/day.png` and `night.png` are the final
-720×720 transparent files; note `validator_version`. `"ok": false` explains why; if it
-says `backdrop_not_flat`, regenerate that image with a flatter magenta background.
-Never edit the script's limits to make it pass.
+It prints JSON. `"ok": true` means `out/normal/` and `out/halloween/` each hold the final
+720×720 transparent `day.png` and `night.png`; note `validator_version`. `"ok": false`
+explains why: `backdrop_not_flat` → regenerate that image with a flatter magenta
+background; `halloween_redrawn` → regenerate halloween-day as an edit of the accepted
+normal-day. Never edit the script's limits to make it pass.
 
 Then **look** at the prepared images and the 360/240 previews yourself and report each point:
 
 - the main sign name is exact and still readable in the 240px preview (if it is too faint or small there, regenerate that day image once asking for a larger, higher-contrast sign);
 - the night image is the same building in the same position, only relit;
-- day and night of both editions are the same size and stand on the same line (the script enforces this; say so if anything looks off);
+- the Halloween model is the normal model with decorations, not a redrawn or wider building;
+- all four are the same size and stand on the same line (the script enforces this; say so if anything looks off);
 - nothing important is cut off or turned transparent.
 
 The script cannot judge the sign or the building; you must.

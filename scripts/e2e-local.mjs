@@ -107,6 +107,8 @@ try {
   const pageRes = await at(`/authorize?${authQuery}`);
   const pageHtml = await pageRes.text();
   check("sign-in page names the client and asks for the owner token", pageRes.status === 200 && pageHtml.includes("ChatGPT (test)") && pageHtml.includes('type="password"'));
+  const csp = pageRes.headers.get("content-security-policy") ?? "";
+  check("the sign-in page lets the browser follow the redirect back to the client", /form-action 'self' https:\/\/chatgpt\.com(;|$| )/.test(csp), csp);
   const wrong = await at(`/authorize?${authQuery}`, { method: "POST", body: new URLSearchParams({ token: "wrong" }), redirect: "manual" });
   check("a wrong owner token is refused", wrong.status === 401);
   const ok = await at(`/authorize?${authQuery}`, { method: "POST", body: new URLSearchParams({ token: TOKEN }), redirect: "manual" });

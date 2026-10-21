@@ -8,13 +8,19 @@ export const SCOPE = "checkins.write";
 const esc = (value) =>
   String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const HEADERS = {
-  "content-type": "text/html; charset=utf-8",
-  "cache-control": "no-store",
-  "x-frame-options": "DENY",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
-  "referrer-policy": "no-referrer",
-};
+// form-action also governs where the browser may follow the redirect that answers the
+// form, so it must include the client's redirect origin (for ChatGPT, chatgpt.com).
+export function pageHeaders(redirectOrigin = null) {
+  const formAction = redirectOrigin ? `'self' ${redirectOrigin}` : "'self'";
+  return {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "x-frame-options": "DENY",
+    "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`,
+    "referrer-policy": "no-referrer",
+  };
+}
+const HEADERS = pageHeaders();
 
 function page({ client, redirectHost, scopes, error = "" }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -42,21 +48,26 @@ export async function handleAuthorize(request, env) {
   const client = await helpers.lookupClient(authRequest.clientId);
   if (!client) return new Response(page({ client: "Unknown client", redirectHost: "—", scopes: "—", error: "This client is not registered." }), { status: 400, headers: HEADERS });
   let redirectHost = "—";
+  let redirectOrigin = null;
   try {
-    redirectHost = new URL(authRequest.redirectUri).host;
+    const u = new URL(authRequest.redirectUri);
+    redirectHost = u.host;
+    // The library has already checked the URI against the client's registered ones.
+    if (u.protocol === "https:" || u.hostname === "localhost" || u.hostname === "127.0.0.1") redirectOrigin = u.origin;
   } catch {
     /* shown as unknown */
   }
+  const headers = pageHeaders(redirectOrigin);
   const view = { client: client.clientName || client.clientId, redirectHost, scopes: SCOPE };
 
-  if (request.method === "GET") return new Response(page(view), { headers: HEADERS });
+  if (request.method === "GET") return new Response(page(view), { headers });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST" } });
 
   const form = await request.formData().catch(() => null);
   const provided = form?.get("token");
   if (!(await tokenMatches(typeof provided === "string" ? provided : "", env.OWNER_TOKEN))) {
     await new Promise((r) => setTimeout(r, 600)); // slow down guessing
-    return new Response(page({ ...view, error: "That token is not right. 令牌不正确。" }), { status: 401, headers: HEADERS });
+    return new Response(page({ ...view, error: "That token is not right. 令牌不正确。" }), { status: 401, headers });
   }
   const ownerId = env.OWNER_ID || "owner";
   const { redirectTo } = await helpers.completeAuthorization({
@@ -67,5 +78,5 @@ export async function handleAuthorize(request, env) {
     // The owner id travels inside the token; the MCP handler never takes it from a request.
     props: { ownerId },
   });
-  return Response.redirect(redirectTo, 302);
+  return new Response(null, { status: 302, headers: { location: redirectTo, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
 }

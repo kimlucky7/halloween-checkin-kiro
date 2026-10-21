@@ -1048,8 +1048,9 @@ document.addEventListener("click", (e) => {
   closeShelf();
 });
 els.scheme.addEventListener("click", (e) => {
-  sessionStorage.setItem("scheme-chosen", "1");
-  setMode(!isNight(), e);
+  const night = !isNight();
+  sessionStorage.setItem("hc-scheme", night ? "dark" : "light");
+  setMode(night, e);
 });
 els.share.addEventListener("click", share);
 els.lang.addEventListener("click", () => {
@@ -1070,9 +1071,7 @@ document.addEventListener("keydown", (e) => {
     stripStep(dir);
   }
 });
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
-  if (!sessionStorage.getItem("scheme-chosen")) setMode(e.matches);
-});
+// The default is Halloween night; the OS colour scheme does not override it.
 
 setupPager();
 setupTilt();

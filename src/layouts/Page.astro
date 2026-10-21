@@ -18,9 +18,10 @@ const build = (process.env.WORKERS_CI_COMMIT_SHA || process.env.BUILD_ID || "loc
     <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    {/* Pick day or night before first paint so there is no flash. */}
+    {/* Halloween night is the default look. A choice made with the switch lasts for the
+        browser session. Set before first paint so there is no flash. */}
     <script is:inline>
-      document.documentElement.dataset.scheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.dataset.scheme = sessionStorage.getItem("hc-scheme") === "light" ? "light" : "dark";
     </script>
   </head>
   <body>

@@ -110,10 +110,15 @@ ChatGPT 会打开你网站的授权页「Connect to Halloween Check-in」。输�
 ### 8.2 添加 Skill
 
 ```bash
-npm run skill:zip      # 生成 chatgpt-skill/dist/halloween-checkin-skill.zip
+HC_MCP_URL=https://<你的网址>/mcp npm run chatgpt:zip
 ```
 
-ChatGPT → **Skills** → 上传这个 zip（或在 Skills 里新建，把 `chatgpt-skill/halloween-checkin/SKILL.md` 的内容和 `scripts/prepare.py` 放进去）。
+会生成两个文件，二选一：
+
+- `chatgpt-skill/dist/halloween-checkin-plugin.zip`：完整插件包（`plugin.json` + `mcp.json` + `skills/`），在 ChatGPT **Plugins** 里上传；
+- `chatgpt-skill/dist/halloween-checkin-skill.zip`：只有 Skill，在 ChatGPT **Skills** 里上传（MCP 用 8.1 单独添加）。
+
+在 Plugins 里上传单独的 Skill zip 会提示「无法添加插件」：插件包必须在根目录带 `plugin.json`。
 
 ## 9. 打第一张卡
 

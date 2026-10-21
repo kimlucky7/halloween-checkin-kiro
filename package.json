@@ -19,7 +19,7 @@
     "prepare:images": "node scripts/prepare.mjs",
     "hc": "node scripts/hc.mjs",
     "e2e:local": "npm run build && node scripts/e2e-local.mjs",
-    "skill:zip": "cd chatgpt-skill && rm -f dist/halloween-checkin-skill.zip && mkdir -p dist && zip -qr dist/halloween-checkin-skill.zip halloween-checkin -x '*/__pycache__/*' '*.DS_Store' && echo chatgpt-skill/dist/halloween-checkin-skill.zip"
+    "chatgpt:zip": "bash scripts/package-chatgpt.sh"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "1.2.3",

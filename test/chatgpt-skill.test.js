@@ -28,6 +28,16 @@ test("the skill's prompt files exist and night prompts never take the photo", ()
   for (const text of [day, night]) assert.ok(!/check-in card|打卡卡片/.test(text));
 });
 
+test("the Halloween edition is an edit of the normal day and shares one transform with it", () => {
+  const day = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/day-prompt.md", import.meta.url), "utf8");
+  const halloween = day.slice(day.indexOf("## halloween-day"));
+  assert.match(halloween, /Image input: the accepted normal-day image only/);
+  assert.match(halloween, /do not redraw or widen the building/);
+  assert.match(skill, /--halloween-day halloween-day\.png --halloween-night halloween-night\.png/);
+  assert.match(script, /--halloween-day/);
+  assert.match(script, /halloween_redrawn/);
+});
+
 test("the skill keeps the publication boundary and the prepare script keeps the site's geometry", () => {
   assert.match(skill, /stop and wait/i);
   assert.match(skill, /normal\*\* revision first/);

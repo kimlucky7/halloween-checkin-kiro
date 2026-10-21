@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { caption, depthFor, loopShift, mapsUrl, modeEdition, nearestTo, pickVariant, relativeTime, shareFileName, shortDate, sortCheckins, stepIndex } from "../src/lib/view.js";
+import { caption, depthFor, loopShift, mapsUrl, modeEdition, nearestTo, pickImage, pickVariant, relativeTime, shareFileName, shortDate, sortCheckins, stepIndex } from "../src/lib/view.js";
 import { run, spring } from "../src/lib/spring.js";
 
 const NOW = Date.parse("2026-10-12T10:00:00Z");
@@ -12,6 +12,7 @@ const ck = (over = {}) => ({
   capturedAt: null, capturedAtSource: null, companions: [], publishedAt: "2026-10-09T10:00:00.000Z", variants: [v("normal")], ...over,
 });
 const sentence = (parts) => parts.map((p) => p.value).join("");
+const pick = (c, night) => { const p = pickImage(c, night); return [p.theme, p.lighting]; };
 
 // ---- view logic
 
@@ -67,6 +68,24 @@ test("two modes: day shows the normal edition, night the Halloween edition with 
   const plain = pickVariant(ck(), modeEdition(true));
   assert.equal(plain.variant.theme, "normal");
   assert.equal(plain.variant.night, "/media/normal/night.png");
+});
+
+test("pickImage: the picture a mode shows, never festive by day while a normal one exists", () => {
+  const legacy = ck(); // normal day + night
+  assert.deepEqual(pick(legacy, false), ["normal", "day"]);
+  assert.deepEqual(pick(legacy, true), ["normal", "night"]);
+  // New places: normal = day only, Halloween = night only.
+  const two = ck({ variants: [{ ...v("normal"), night: null }, { ...v("halloween"), day: null }] });
+  assert.deepEqual(pick(two, false), ["normal", "day"]);
+  assert.deepEqual(pick(two, true), ["halloween", "night"]);
+  assert.equal(pickImage(two, true).url, "/media/halloween/night.png");
+  // A new place without Halloween shows its day picture at night, labelled as day.
+  const dayOnly = ck({ variants: [{ ...v("normal"), night: null }] });
+  assert.deepEqual(pick(dayOnly, true), ["normal", "day"]);
+  // A Halloween-only place falls back to its night picture by day.
+  const nightOnly = ck({ variants: [{ ...v("halloween"), day: null }] });
+  assert.deepEqual(pick(nightOnly, false), ["halloween", "night"]);
+  assert.equal(pickImage(ck({ variants: [] }), true), null);
 });
 
 test("moving through places wraps in both directions (index 0 is the newest)", () => {

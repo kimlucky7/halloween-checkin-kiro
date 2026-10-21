@@ -168,6 +168,26 @@ export function modeEdition(night) {
 }
 
 /**
+ * The picture to show for a mode. Editions may carry only one lighting (new places:
+ * normal = day, Halloween = night; older places: both). Preference order:
+ *   day:   normal day → normal night → Halloween day → Halloween night
+ *   night: Halloween night → normal night → normal day → Halloween day
+ * so day mode never shows a festive picture while a normal one exists. Returns the
+ * picture's real theme and lighting (for alt text and file names), or null.
+ */
+export function pickImage(checkin, night) {
+  const order = night
+    ? [["halloween", "night"], ["normal", "night"], ["normal", "day"], ["halloween", "day"]]
+    : [["normal", "day"], ["normal", "night"], ["halloween", "day"], ["halloween", "night"]];
+  const variants = checkin?.variants ?? [];
+  for (const [theme, lighting] of order) {
+    const variant = variants.find((v) => v.theme === theme);
+    if (variant?.[lighting]) return { variant, theme, lighting, url: variant[lighting] };
+  }
+  return null;
+}
+
+/**
  * Next index when moving through places that wrap around.
  * `dir` +1 moves right, toward newer places; -1 moves left, toward older ones.
  * Index 0 is the newest place.

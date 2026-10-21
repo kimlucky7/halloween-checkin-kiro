@@ -12,7 +12,7 @@
 import { checkFinalPng } from "./png.js";
 import { computePayloadHash, sha256Hex } from "./domain/canonical.js";
 import { checkApprovalForPublish, ATTESTATION_LEVELS, DEFAULT_APPROVAL_TTL_MS } from "./domain/approval.js";
-import { MAX_IMAGE_BYTES, SLOTS, ValidationError, validateRevisionInput } from "./domain/schema.js";
+import { MAX_IMAGE_BYTES, SLOTS, ValidationError, slotsOf, validateRevisionInput } from "./domain/schema.js";
 import { transition } from "./domain/state.js";
 
 export class HttpError extends Error {
@@ -29,6 +29,12 @@ export class HttpError extends Error {
 const KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const mediaKey = (revisionId, slot) => `media/${revisionId}/${slot}.png`;
 const iso = (ms) => new Date(ms).toISOString();
+const uploadedColumn = (slot) => (slot === "day" ? "day_uploaded" : "night_uploaded");
+/** Every image the revision registered has been stored. */
+const mediaComplete = (row) => {
+  const slots = slotsOf(JSON.parse(row.payload_json));
+  return slots.length > 0 && slots.every((s) => !!row[uploadedColumn(s)]);
+};
 
 export function createService({
   db,
@@ -84,7 +90,7 @@ export function createService({
       payloadHash: row.payload_hash,
       linkCheckinId: row.link_checkin_id,
       linkRevisionId: row.link_revision_id ?? null,
-      media: { day: { uploaded: !!row.day_uploaded }, night: { uploaded: !!row.night_uploaded } },
+      media: Object.fromEntries(slotsOf(JSON.parse(row.payload_json)).map((s) => [s, { uploaded: !!row[uploadedColumn(s)] }])),
       approval: approval
         ? { id: approval.id, expiresAt: approval.expires_at, revokedAt: approval.revoked_at, payloadHash: approval.payload_hash }
         : null,
@@ -150,6 +156,7 @@ export function createService({
       const row = await loadOwned(ownerId, revisionId);
       requireEditable(row);
       const expected = JSON.parse(row.payload_json).images[slot];
+      if (!expected) throw new HttpError(400, "bad_slot", `this revision has no ${slot} image`);
       if (!(bytes instanceof Uint8Array) || bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) {
         throw new HttpError(413, "bad_size", `image must be 1..${MAX_IMAGE_BYTES} bytes`);
       }
@@ -171,10 +178,10 @@ export function createService({
         await media.put(key, bytes, { httpMetadata: { contentType: "image/png" }, customMetadata: { sha256: sha } });
       }
       const now = iso(clock());
-      const column = slot === "day" ? "day_uploaded" : "night_uploaded";
+      const column = uploadedColumn(slot);
       await db.prepare(`UPDATE hc_revisions SET ${column} = 1 WHERE id = ?`).bind(revisionId).run();
       const fresh = await loadOwned(ownerId, revisionId);
-      if (fresh.day_uploaded && fresh.night_uploaded && fresh.draft_state === "preparing") {
+      if (mediaComplete(fresh) && fresh.draft_state === "preparing") {
         await db.prepare("UPDATE hc_drafts SET state = ?, updated_at = ? WHERE id = ?")
           .bind(transition("preparing", "media_complete"), now, fresh.draft_id).run();
       }
@@ -201,7 +208,7 @@ export function createService({
       if (!["review_ready", "approved"].includes(row.draft_state)) {
         throw new HttpError(409, "not_review_ready", `draft is ${row.draft_state}`);
       }
-      if (!row.day_uploaded || !row.night_uploaded) throw new HttpError(409, "media_incomplete");
+      if (!mediaComplete(row)) throw new HttpError(409, "media_incomplete");
       if (payloadHash !== row.payload_hash) throw new HttpError(409, "hash_mismatch", "approve the hash of the exact package you reviewed");
       if (!ATTESTATION_LEVELS.includes(attestation)) {
         throw new HttpError(400, "bad_attestation", `attestation must be one of ${ATTESTATION_LEVELS.join(", ")}`);
@@ -269,7 +276,7 @@ export function createService({
           id: row.id,
           payloadHash: row.payload_hash,
           payload: JSON.parse(row.payload_json),
-          validationPassed: !!row.day_uploaded && !!row.night_uploaded,
+          validationPassed: mediaComplete(row),
         },
         expectedHash: payloadHash,
         target,
@@ -281,7 +288,7 @@ export function createService({
       if (row.draft_state !== "approved") throw new HttpError(409, "not_approved", `draft is ${row.draft_state}`);
 
       const payload = JSON.parse(row.payload_json);
-      for (const slot of SLOTS) {
+      for (const slot of slotsOf(payload)) {
         const head = await media.head(mediaKey(revisionId, slot));
         if (!head || head.customMetadata?.sha256 !== payload.images[slot].sha256) {
           throw new HttpError(409, "media_missing", `${slot} image is not stored`);
@@ -336,8 +343,9 @@ export function createService({
           theme: v.theme,
           text: v.text,
           differences: JSON.parse(v.differences_json),
-          day: `${origin}/media/${v.revision_id}/day.png`,
-          night: `${origin}/media/${v.revision_id}/night.png`,
+          // Only the lightings this edition has; the other one is null.
+          day: v.day_key ? `${origin}/media/${v.revision_id}/day.png` : null,
+          night: v.night_key ? `${origin}/media/${v.revision_id}/night.png` : null,
         })),
       }));
     },
@@ -347,7 +355,8 @@ export function createService({
       // Only objects referenced by a committed variant are public.
       const variant = await one("SELECT day_key, night_key FROM hc_variants WHERE revision_id = ?", revisionId);
       if (!variant) return null;
-      return media.get(slot === "day" ? variant.day_key : variant.night_key);
+      const key = slot === "day" ? variant.day_key : variant.night_key;
+      return key ? media.get(key) : null;
     },
   };
 
@@ -389,10 +398,12 @@ export function createService({
             .bind(checkinId, op.owner_id, payload.text, JSON.stringify(payload.place), payload.capturedAt, payload.capturedAtSource, JSON.stringify(payload.companions), now),
         );
       }
+      const img = payload.images;
       statements.push(
         db.prepare("INSERT INTO hc_variants (checkin_id, theme, revision_id, text, differences_json, day_key, night_key, day_sha256, night_sha256, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
           .bind(checkinId, payload.theme, row.id, payload.text, JSON.stringify(payload.differences),
-            mediaKey(row.id, "day"), mediaKey(row.id, "night"), payload.images.day.sha256, payload.images.night.sha256, now),
+            img.day ? mediaKey(row.id, "day") : null, img.night ? mediaKey(row.id, "night") : null,
+            img.day?.sha256 ?? null, img.night?.sha256 ?? null, now),
       );
     }
     statements.push(

@@ -3,6 +3,10 @@
 
 export const THEMES = ["normal", "halloween"];
 export const SLOTS = ["day", "night"];
+/** The picture each edition must carry: day mode shows normal, night mode Halloween. */
+export const REQUIRED_SLOT = { normal: "day", halloween: "night" };
+/** Slots a revision actually carries, in SLOTS order. */
+export const slotsOf = (payload) => SLOTS.filter((s) => payload.images?.[s]);
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const MAX_TEXT_LENGTH = 280;
 export const MAX_COMPANIONS = 10;
@@ -71,11 +75,18 @@ export function validateRevisionInput(input, { project }) {
 
   const images = {};
   const rawImages = obj.images && typeof obj.images === "object" ? obj.images : null;
-  if (!rawImages) fail("images", "must include day and night");
+  const required = REQUIRED_SLOT[theme];
+  if (!rawImages) fail("images", `must include ${required ?? "day or night"}`);
   else {
+    // Each edition needs the picture the site shows for it (normal → day,
+    // Halloween → night); the other lighting is optional.
     for (const slot of SLOTS) {
       const img = rawImages[slot];
-      if (!img || typeof img !== "object") { fail(`images.${slot}`, "is required"); continue; }
+      if (img == null) {
+        if (slot === required) fail(`images.${slot}`, `is required for the ${theme} edition`);
+        continue;
+      }
+      if (typeof img !== "object") { fail(`images.${slot}`, "must be an object"); continue; }
       if (typeof img.sha256 !== "string" || !SHA256.test(img.sha256)) {
         fail(`images.${slot}.sha256`, "must be lowercase hex SHA-256");
       }

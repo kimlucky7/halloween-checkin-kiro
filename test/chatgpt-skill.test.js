@@ -18,23 +18,25 @@ test("the ChatGPT skill names only tools the MCP server provides, and every requ
   }
 });
 
-test("the skill's prompt files exist and night prompts never take the photo", () => {
+test("the skill's prompt files exist and the night prompt never takes the photo", () => {
   const day = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/day-prompt.md", import.meta.url), "utf8");
   const night = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/night-prompt.md", import.meta.url), "utf8");
   assert.match(skill, /references\/day-prompt\.md/);
   assert.match(skill, /references\/night-prompt\.md/);
   assert.match(day, /#FF00FF/);
-  assert.match(night, /never the original\s+photo/);
+  assert.match(night, /never the original photo/);
   for (const text of [day, night]) assert.ok(!/check-in card|打卡卡片/.test(text));
 });
 
-test("the Halloween edition is an edit of the normal day and shares one transform with it", () => {
-  const day = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/day-prompt.md", import.meta.url), "utf8");
-  const halloween = day.slice(day.indexOf("## halloween-day"));
-  assert.match(halloween, /Image input: the accepted normal-day image only/);
-  assert.match(halloween, /do not redraw or widen the building/);
-  assert.match(skill, /--halloween-day halloween-day\.png --halloween-night halloween-night\.png/);
-  assert.match(script, /--halloween-day/);
+test("two pictures: the Halloween night is an edit of the normal day and shares one transform with it", () => {
+  const night = readFileSync(new URL("../chatgpt-skill/halloween-checkin/references/night-prompt.md", import.meta.url), "utf8");
+  assert.match(night, /Image input: the accepted normal-day image only/);
+  assert.match(night, /do not redraw or widen the building/);
+  assert.match(skill, /--day normal-day\.png --halloween-night halloween-night\.png/);
+  assert.match(skill, /`day_image` =\s+`out\/normal\/day\.png`/);
+  assert.match(skill, /`night_image` = `out\/halloween\/night\.png`/);
+  assert.ok(!/normal-night|halloween-day/.test(skill), "no second pair is generated");
+  assert.match(script, /--halloween-night/);
   assert.match(script, /halloween_redrawn/);
 });
 

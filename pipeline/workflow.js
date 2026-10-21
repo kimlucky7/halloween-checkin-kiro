@@ -98,10 +98,12 @@ export async function verifyPublished({ client, checkinId, revisionId, dir }) {
   const problems = [];
   if (!entry) problems.push("check-in not in public list");
   const submission = JSON.parse(await readFile(path.join(dir, "submission.json"), "utf8"));
-  const variant = entry?.variants.find((v) => v.day.includes(revisionId));
+  const variant = entry?.variants.find((v) => (v.day ?? v.night ?? "").includes(revisionId));
   if (entry && !variant) problems.push("variant for this revision missing");
   for (const slot of ["day", "night"]) {
     if (!variant) break;
+    if (!submission.images[slot]) continue; // this edition has no picture in that lighting
+    if (!variant[slot]) { problems.push(`${slot} media not listed`); continue; }
     const media = await client.fetchPublicMedia(variant[slot]);
     if (media.status !== 200) problems.push(`${slot} media status ${media.status}`);
     else if (!media.contentType?.startsWith("image/png")) problems.push(`${slot} content-type ${media.contentType}`);

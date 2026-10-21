@@ -62,7 +62,12 @@ test("rejects unrecognized fields, missing images, and failed validation", () =>
   assert.throws(() => validateRevisionInput({ ...base(), ownerId: "someone" }, ctx), /ownerId/);
   const { images, ...noImages } = base();
   assert.throws(() => validateRevisionInput(noImages, ctx), /images/);
-  assert.throws(() => validateRevisionInput({ ...base(), images: { day: base().images.day } }, ctx), /images.night/);
+  // Each edition needs the picture the site shows for it; the other lighting is optional.
+  assert.throws(() => validateRevisionInput({ ...base(), images: { night: base().images.night } }, ctx), /images.day is required for the normal edition/);
+  assert.throws(() => validateRevisionInput({ ...base(), theme: "halloween", images: { day: base().images.day } }, ctx), /images.night is required for the halloween edition/);
+  assert.deepEqual(Object.keys(validateRevisionInput({ ...base(), images: { day: base().images.day } }, ctx).payload.images), ["day"]);
+  assert.deepEqual(Object.keys(validateRevisionInput({ ...base(), theme: "halloween", images: { night: base().images.night } }, ctx).payload.images), ["night"]);
+  assert.throws(() => validateRevisionInput({ ...base(), images: { ...base().images, dusk: base().images.day } }, ctx), /images.dusk/);
   assert.throws(() => validateRevisionInput({ ...base(), validator: { version: "v", passed: false } }, ctx), /validator.passed/);
 });
 

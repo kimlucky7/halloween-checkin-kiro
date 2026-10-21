@@ -1,12 +1,13 @@
 // Site behaviour and motion.
 //
 // Two modes only: Day shows each place's normal picture; Night shows the
-// Halloween edition when a place has one (otherwise its normal night picture)
-// together with the Halloween atmosphere. Reads data only through ./data.js and
+// Halloween night picture when a place has one (otherwise its normal night
+// picture, or its day picture if that is all it has) together with the Halloween
+// atmosphere. Reads data only through ./data.js and
 // decides what to show only through ../lib/view.js. Record text is always
 // inserted with textContent, never parsed as HTML.
 import {
-  caption, depthFor, loopShift, modeEdition, nearestTo, pickVariant,
+  caption, depthFor, loopShift, nearestTo, pickImage,
   shareFileName, shortDate, sortCheckins, STRINGS,
 } from "../lib/view.js";
 import { run, spring } from "../lib/spring.js";
@@ -53,7 +54,6 @@ const state = {
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const finePointer = () => matchMedia("(hover: hover) and (pointer: fine)").matches;
 const isNight = () => root.dataset.scheme === "dark";
-const lighting = () => (isNight() ? "night" : "day");
 const t = () => STRINGS[state.lang];
 const current = () => state.checkins[state.index];
 const el = (tag, attrs = {}, text) => {
@@ -64,8 +64,8 @@ const el = (tag, attrs = {}, text) => {
 };
 
 // The picture a place shows in a mode: Night → Halloween edition if it exists.
-const variantFor = (checkin, night) => pickVariant(checkin, modeEdition(night)).variant;
-const urlFor = (checkin, night) => variantFor(checkin, night)[night ? "night" : "day"];
+const imageFor = (checkin, night) => pickImage(checkin, night);
+const urlFor = (checkin, night) => imageFor(checkin, night)?.url ?? "";
 const urlsForMode = (night) => state.checkins.map((c) => urlFor(c, night));
 const heroUrls = (checkin) => [urlFor(checkin, false), urlFor(checkin, true)];
 // The pictures around one place (wrapping), which is what a strip shows first.
@@ -199,8 +199,11 @@ function setPictures() {
     const home = li.dataset.copy === String(HOME);
     const day = li.querySelector(".pic.day");
     const nightImg = li.querySelector(".pic.night");
-    day.alt = home && !night ? s.alt(variantFor(checkin, false).theme, "day", checkin.place?.name) : "";
-    nightImg.alt = home && night ? s.alt(variantFor(checkin, true).theme, "night", checkin.place?.name) : "";
+    const shownDay = imageFor(checkin, false);
+    const shownNight = imageFor(checkin, true);
+    // Alt text names the picture's real edition and lighting, not the mode.
+    day.alt = home && !night && shownDay ? s.alt(shownDay.theme, shownDay.lighting, checkin.place?.name) : "";
+    nightImg.alt = home && night && shownNight ? s.alt(shownNight.theme, shownNight.lighting, checkin.place?.name) : "";
   }
   const parts = heroParts();
   if (parts) parts.sheen.style.setProperty("--mask", `url("${night ? parts.night.src : parts.day.src}")`);
@@ -1034,10 +1037,11 @@ async function setMode(night, event) {
 async function share() {
   const checkin = current();
   if (!checkin) return;
-  const variant = variantFor(checkin, isNight());
-  const name = shareFileName(checkin, variant.theme, lighting());
+  const shown = imageFor(checkin, isNight());
+  if (!shown) return;
+  const name = shareFileName(checkin, shown.theme, shown.lighting);
   try {
-    const blob = await loadImageBlob(variant[lighting()]);
+    const blob = await loadImageBlob(shown.url);
     const file = new File([blob], name, { type: "image/png" });
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: checkin.place?.name ?? checkin.text });

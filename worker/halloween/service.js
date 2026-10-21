@@ -83,6 +83,7 @@ export function createService({
       payload: JSON.parse(row.payload_json),
       payloadHash: row.payload_hash,
       linkCheckinId: row.link_checkin_id,
+      linkRevisionId: row.link_revision_id ?? null,
       media: { day: { uploaded: !!row.day_uploaded }, night: { uploaded: !!row.night_uploaded } },
       approval: approval
         ? { id: approval.id, expiresAt: approval.expires_at, revokedAt: approval.revoked_at, payloadHash: approval.payload_hash }
@@ -96,7 +97,7 @@ export function createService({
 
     async createRevision(ownerId, body) {
       const { draftId = null, ...input } = body && typeof body === "object" ? body : {};
-      const { payload, linkCheckinId } = validateRevisionInput(input, { project });
+      const { payload, linkCheckinId, linkRevisionId } = validateRevisionInput(input, { project });
       const payloadHash = await computePayloadHash(payload);
       const now = iso(clock());
 
@@ -105,6 +106,15 @@ export function createService({
         if (!target || target.owner_id !== ownerId) throw new HttpError(404, "link_target_not_found");
         const taken = await one("SELECT 1 AS x FROM hc_variants WHERE checkin_id = ? AND theme = ?", linkCheckinId, payload.theme);
         if (taken) throw new HttpError(409, "variant_exists", "replacement is not supported; publish a different theme");
+      }
+      if (linkRevisionId) {
+        // The Halloween edition of a place whose normal revision is still under review.
+        const partner = await one(
+          "SELECT r.theme, d.owner_id FROM hc_revisions r JOIN hc_drafts d ON d.id = r.draft_id WHERE r.id = ?",
+          linkRevisionId,
+        );
+        if (!partner || partner.owner_id !== ownerId) throw new HttpError(404, "link_target_not_found");
+        if (partner.theme !== "normal") throw new HttpError(409, "link_target_not_normal");
       }
 
       let id = draftId;
@@ -125,8 +135,8 @@ export function createService({
       }
       const revisionId = newId();
       statements.push(
-        db.prepare("INSERT INTO hc_revisions (id, draft_id, seq, theme, payload_json, payload_hash, link_checkin_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(revisionId, id, seq, payload.theme, JSON.stringify(payload), payloadHash, linkCheckinId, now),
+        db.prepare("INSERT INTO hc_revisions (id, draft_id, seq, theme, payload_json, payload_hash, link_checkin_id, link_revision_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(revisionId, id, seq, payload.theme, JSON.stringify(payload), payloadHash, linkCheckinId, linkRevisionId, now),
         // Any older approval stops being usable because only the current revision can publish.
         db.prepare("UPDATE hc_drafts SET current_revision_id = ?, state = 'preparing', updated_at = ? WHERE id = ?")
           .bind(revisionId, now, id),
@@ -277,8 +287,12 @@ export function createService({
           throw new HttpError(409, "media_missing", `${slot} image is not stored`);
         }
       }
-      if (row.link_checkin_id) {
-        const taken = await one("SELECT 1 AS x FROM hc_variants WHERE checkin_id = ? AND theme = ?", row.link_checkin_id, payload.theme);
+      const linkId = await resolveLink(row);
+      if (row.link_revision_id && !linkId) {
+        throw new HttpError(409, "partner_not_published", "publish the normal edition of this place first");
+      }
+      if (linkId) {
+        const taken = await one("SELECT 1 AS x FROM hc_variants WHERE checkin_id = ? AND theme = ?", linkId, payload.theme);
         if (taken) throw new HttpError(409, "variant_exists");
       }
 
@@ -353,14 +367,23 @@ export function createService({
     return commit(op, row, true);
   }
 
+  // The check-in a revision joins: given directly, or through its published normal partner.
+  async function resolveLink(row) {
+    if (row.link_checkin_id) return row.link_checkin_id;
+    if (!row.link_revision_id) return null;
+    const partner = await one("SELECT checkin_id FROM hc_operations WHERE revision_id = ? AND state = 'published'", row.link_revision_id);
+    return partner?.checkin_id ?? null;
+  }
+
   async function commit(op, row, replay) {
     const payload = JSON.parse(row.payload_json);
+    const linkId = await resolveLink(row);
     const now = iso(clock());
     const already = await one("SELECT checkin_id FROM hc_variants WHERE revision_id = ?", row.id);
-    const checkinId = already?.checkin_id ?? row.link_checkin_id ?? `ck-${op.id.replace(/-/g, "").slice(0, 12)}`;
+    const checkinId = already?.checkin_id ?? linkId ?? `ck-${op.id.replace(/-/g, "").slice(0, 12)}`;
     const statements = [];
     if (!already) {
-      if (!row.link_checkin_id) {
+      if (!linkId) {
         statements.push(
           db.prepare("INSERT OR IGNORE INTO hc_checkins (id, owner_id, text, place_json, captured_at, captured_at_source, companions_json, published_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(checkinId, op.owner_id, payload.text, JSON.stringify(payload.place), payload.capturedAt, payload.capturedAtSource, JSON.stringify(payload.companions), now),

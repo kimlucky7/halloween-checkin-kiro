@@ -25,6 +25,20 @@ Skill 会：
 
 点大图或说明里的时间，大图飞进一条横跨屏幕的时间线：所有地点按时间从左到右排开（最新的在最右），首尾相连、可以一直滑下去，两边始终有相邻的地点。可以左右滑动、鼠标拖动、滚轮或 ←/→ 浏览，正中那张最大。点一张图片回到大图；点空白处或按 Esc，回到正中那一张。大图本身是浏览器原生的横向滚动加吸附（和时间线一样首尾相连），手指左右滑就是系统自己的滚动和惯性，每次停在一张上；滑动时两侧的楼略微缩小变淡，说明文字随距离淡出、在看不见时换成下一个地方。鼠标可以拖，触控板可以横向滑，按 ←/→ 也行。右上角按钮一次展开全部地点的网格，再按一次回到原来的视图。
 
+## 在 ChatGPT 里使用（插件 = Skill + 托管在 Cloudflare 上的 MCP）
+
+整条链路都在 ChatGPT 里完成：ChatGPT 用你的订阅出图，Skill 在它的沙盒里抠图和校验，插件里的 MCP 工具把成品交给 Cloudflare Worker，你说"发布"才公开。
+
+1. **加 MCP 服务器**：chatgpt.com → Plugins → ＋ → Add custom MCP server
+   - Server URL：`https://halloween-checkin.a512884335.workers.dev/mcp`
+   - Authentication：OAuth（不用填 client id，ChatGPT 会自动注册）
+   - 选 Create as a plugin，然后安装这个插件。
+2. **授权**：ChatGPT 会打开本站的授权页，输入你的 owner 令牌（本地 `.env.local` 里的 `HC_TOKEN`）点"允许"。令牌只在这个页面输入，不要贴进聊天。
+3. **加 Skill**：在 ChatGPT 的 Skills 里上传 `chatgpt-skill/dist/halloween-checkin-skill.zip`（源文件在 `chatgpt-skill/halloween-checkin/`）。
+4. **使用**：新开对话，`@` 选这个插件，上传照片说 `checkin Halloween`。它会出四张图（普通/万圣节 × 白天/夜晚），抠图校验后给你看审核包并停下；你说"发布"才发布。
+
+工具：`submit_checkin_for_review`（只登记待审核，不公开）、`publish_checkin`（按审核时的哈希批准并发布，可安全重试）、`get_checkin_status`、`list_checkins`。工具只接收 ChatGPT 文件存储域名上的 HTTPS 文件，每一跳重定向都会再检查，并限制大小。OAuth 记录存在本项目自己的 D1 里（`hc_oauth_kv`）。
+
 ## 架构
 
 ```
@@ -93,7 +107,7 @@ npm run hc -- publish --dir ws      # 发布，并核验公开图片的状态、
 ## 现状与限制（如实）
 
 - Skill 还没在真实宿主里配真实照片跑过；提示词和图片准备只用合成素材验证过，第一次真实出图可能需要调整。
-- 认证只有 Bearer 令牌，没有 OAuth/MCP，所以没有 ChatGPT 远程连接器。
+- ChatGPT 插件（OAuth + MCP）在本地真实运行时里按协议完整测通（注册、授权、令牌交换、刷新、调用工具、授权码重用会吊销），但还没在你的 ChatGPT 账号里实际连过；ChatGPT 传文件给工具的细节以实际为准。
 - 批准是代理声明（见上），没有网页确认按钮。
 - 没有速率限制，没有替换、回滚或删除功能。
 - 视觉检查（招牌、结构、夜景是不是同一栋楼）由代理和你完成，脚本只做机械检查。

@@ -21,6 +21,7 @@
     "e2e:local": "npm run build && node scripts/e2e-local.mjs"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.3",
     "astro": "7.2.9",
     "sharp": "0.35.4"
   },

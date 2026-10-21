@@ -16,7 +16,7 @@ A subscription is not an API, so the public site cannot generate anything. Revie
 |---|---|
 | Runtime | Node ≥ 22.12, ESM JavaScript, Astro 7, `sharp`, `node:test` |
 | Auth | Single owner, Bearer token stored as the Worker secret `OWNER_TOKEN`; the owner id comes from server config, never from a request |
-| Transport | Plain HTTPS: JSON for revisions, raw PNG body for media upload. No MCP/OAuth connector (owner chose skill-only) |
+| Transport | CLI: plain HTTPS with the owner token. ChatGPT: a plugin = skill + remote MCP server on the same Worker (`/mcp`), OAuth 2.1 via `@cloudflare/workers-oauth-provider` 1.2.3 (PKCE, dynamic registration, client metadata documents); the owner signs in with the owner token on `/authorize`. OAuth records in D1 (`hc_oauth_kv`). Files arrive as ChatGPT file parameters and are downloaded only from ChatGPT file-storage hosts |
 | Approval | `trusted-agent-attestation`: the server checks identity, payload hash, target and expiry, but cannot prove a human clicked |
 | Image generation | Host only. `pipeline/provider.js` has a host-import adapter and a mock |
 | Image preparation | `pipeline/prepare.js`: keep source alpha if present, else key out the flat backdrop connected to the image edge, unmix edges, drop specks, one shared transform onto 720×720 with the base at y = 651 |

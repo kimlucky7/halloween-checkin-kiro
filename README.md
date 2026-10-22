@@ -2,6 +2,9 @@
 
 把去过的地方，收藏成会随天色亮灯的微缩小楼。说一句 `checkin`，再加一句 `Halloween`，它还会换上一套万圣节装扮。
 
+[![观看演示视频（YouTube）](docs/demo-video.jpg)](https://youtu.be/9htWZpw9GGM)
+
+- **演示视频**：https://youtu.be/9htWZpw9GGM （点上面的图即可播放）
 - **在线演示**：https://halloween-checkin.a512884335.workers.dev （左下角切换白天 / 万圣夜，点图片看时间线）
 - **自己部署一套**：[docs/SELF_HOST.md](docs/SELF_HOST.md) —— 一步步照做，约 15 分钟；也可以把这份文档直接丢给你的 ChatGPT / Kiro，让它带你做
 - **怎么用 Kiro 开发的**：见下文「Kiro 开发记录」

@@ -1,5 +1,12 @@
 # Halloween Check-in
 
+<p align="center">
+  <a href="https://halloween-checkin.a512884335.workers.dev"><img alt="在线体验 Live Demo" src="https://img.shields.io/badge/%F0%9F%8E%83%20%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C%20Live%20Demo-halloween--checkin.a512884335.workers.dev-F97316?style=for-the-badge"></a>
+  <a href="https://youtu.be/9htWZpw9GGM"><img alt="演示视频 Video" src="https://img.shields.io/badge/%E2%96%B6%20%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91%20Video-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
+</p>
+
+<p align="center"><b>👉 在线体验：<a href="https://halloween-checkin.a512884335.workers.dev">https://halloween-checkin.a512884335.workers.dev</a></b></p>
+
 把去过的地方，收藏成会随天色亮灯的微缩小楼。说一句 `checkin`，再加一句 `Halloween`，它还会换上一套万圣节装扮。
 
 [![观看演示视频（YouTube）](docs/demo-video.jpg)](https://youtu.be/9htWZpw9GGM)

@@ -1,0 +1,151 @@
+# Halloween Check-in
+
+[English](README.md) | **中文**
+
+<p align="center">
+  <a href="https://halloween-checkin.a512884335.workers.dev"><img alt="在线体验 Live Demo" src="https://img.shields.io/badge/%F0%9F%8E%83%20%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C%20Live%20Demo-halloween--checkin.a512884335.workers.dev-F97316?style=for-the-badge"></a>
+  <a href="https://youtu.be/9htWZpw9GGM"><img alt="演示视频 Video" src="https://img.shields.io/badge/%E2%96%B6%20%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91%20Video-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
+</p>
+
+<p align="center"><b>👉 在线体验：<a href="https://halloween-checkin.a512884335.workers.dev">https://halloween-checkin.a512884335.workers.dev</a></b></p>
+
+把去过的地方，收藏成会随天色亮灯的微缩小楼。说一句 `checkin`，再加一句 `Halloween`，它还会换上一套万圣节装扮。
+
+[![观看演示视频（YouTube）](docs/demo-video.jpg)](https://youtu.be/9htWZpw9GGM)
+
+- **演示视频**：https://youtu.be/9htWZpw9GGM （点上面的图即可播放）
+- **在线演示**：https://halloween-checkin.a512884335.workers.dev （左下角切换白天 / 万圣夜，点图片看时间线）
+- **自己部署一套**：[docs/SELF_HOST.md](docs/SELF_HOST.md) —— 一步步照做，约 15 分钟；也可以把这份文档直接丢给你的 ChatGPT / Kiro，让它带你做
+- **怎么用 Kiro 开发的**：见下文「Kiro 开发记录」
+
+参加 AWS「Kiro 鬼点子计划」线上赛。
+
+## 怎么用
+
+在支持生图的 AI 对话里（ChatGPT、Codex 等）上传一张你拍的地点照片，说：
+
+```
+checkin Halloween
+```
+
+Skill 会：
+
+1. 用照片生成普通版白天的微缩模型，再只用这张白天图生成同一栋楼的万圣节夜景（加几样小装饰、换成夜晚灯光）；
+2. 抠掉背景、两张共用一套构图（大小和位置完全一样），输出两张 720×720 透明 PNG，并做自动校验；
+3. 把确切的两张图、文案、差异说明（比如"加了一个南瓜"）给你审核，然后**停下**；
+4. 你明确说"发布"之后，才发布到网站。
+
+网站只有两种模式，左下角一个按钮切换，按钮上显示的是**按下去会切到的模式**：白天时显示南瓜灯头（切到万圣夜），夜晚时显示太阳（切回白天）。**白天**显示普通版；**夜晚**显示万圣节版，并带上万圣节氛围：月亮、成群飞过月亮的蝙蝠、仿照 Kiro 小鬼形象画的小幽灵（眼睛会跟着指针转、会眨眼，还会时不时从建筑后面探出头）、垂下来的蜘蛛、角落的蛛网、雾和火星。某个地点还没有万圣节版时，夜晚显示它的普通夜景图（较早导入的地点有），没有就显示白天图。默认打开就是万圣夜；切换后的选择在本次浏览期间保留。
+
+点大图或说明里的时间，大图飞进一条横跨屏幕的时间线：所有地点按时间从左到右排开（最新的在最右），首尾相连、可以一直滑下去，两边始终有相邻的地点。可以左右滑动、鼠标拖动、滚轮或 ←/→ 浏览，正中那张最大。点一张图片回到大图；点空白处或按 Esc，回到正中那一张。大图本身是浏览器原生的横向滚动加吸附（和时间线一样首尾相连），手指左右滑就是系统自己的滚动和惯性，每次停在一张上；滑动时两侧的楼略微缩小变淡，说明文字随距离淡出、在看不见时换成下一个地方。鼠标可以拖，触控板可以横向滑，按 ←/→ 也行。右上角按钮一次展开全部地点的网格，再按一次回到原来的视图。
+
+## 在 ChatGPT 里使用（插件 = Skill + 托管在 Cloudflare 上的 MCP）
+
+整条链路都在 ChatGPT 里完成：ChatGPT 用你的订阅出图，Skill 在它的沙盒里抠图和校验，插件里的 MCP 工具把成品交给 Cloudflare Worker，你说"发布"才公开。
+
+1. **加 MCP 服务器**：chatgpt.com → Plugins → ＋ → Add custom MCP server
+   - Server URL：`https://halloween-checkin.a512884335.workers.dev/mcp`
+   - Authentication：OAuth（不用填 client id，ChatGPT 会自动注册）
+   - 选 Create as a plugin，然后安装这个插件。
+2. **授权**：ChatGPT 会打开本站的授权页，输入你的 owner 令牌（本地 `.env.local` 里的 `HC_TOKEN`）点"允许"。令牌只在这个页面输入，不要贴进聊天。
+3. **加 Skill**：先运行 `npm run chatgpt:zip`，生成两个文件，二选一：
+   - `chatgpt-skill/dist/halloween-checkin-plugin.zip`：完整插件包（`plugin.json` + `mcp.json` + `skills/`），在 **Plugins** 里上传；
+   - `chatgpt-skill/dist/halloween-checkin-skill.zip`：只有 Skill，在 **Skills** 里上传（MCP 按第 1 步单独添加）。
+   在 Plugins 里上传单独的 Skill zip 会提示「无法添加插件」，因为插件包必须带 `plugin.json`。
+4. **使用**：新开对话，`@` 选这个插件，上传照片说 `checkin Halloween`。它会出两张图（普通版白天、万圣节夜景），抠图校验后给你看审核包并停下；你说"发布"才发布。
+
+工具：`submit_checkin_for_review`（只登记待审核，不公开）、`publish_checkin`（按审核时的哈希批准并发布，可安全重试）、`get_checkin_status`、`list_checkins`。工具只接收 ChatGPT 文件存储域名上的 HTTPS 文件，每一跳重定向都会再检查，并限制大小。OAuth 记录存在本项目自己的 D1 里（`hc_oauth_kv`）。
+
+## 架构
+
+```
+宿主 AI（Skill）                    Cloudflare Worker                     网站
+照片 + checkin [Halloween]           POST /api/revisions   注册版本         GET /api/checkins
+→ 宿主生图（你的订阅）              PUT  …/media/day|night 上传确切字节     GET /media/<rev>/<day|night>.png
+→ npm run prepare:images            POST …/approve        绑定哈希与目标   （只返回已发布的安全字段）
+→ npm run hc -- review / submit     POST …/publish        幂等发布
+→ 审核，等你说发布                   D1：记录/版本/批准/操作   R2：不可变图片
+```
+
+- 生图只发生在宿主里，网站和后端不调用任何生图服务。
+- 批准绑定版本、内容哈希和发布目标，30 分钟过期，可撤销；任何改动都会产生新版本，旧批准失效。
+- 发布是幂等的：同一个幂等键重放返回同一结果，同键不同内容报冲突；一个版本最多发布一次。
+- 先写图片、再一次原子提交记录；提交结果不确定时，用同一个键恢复，不会重复发布。
+- 数据里普通版和万圣节版分开存，互不覆盖；界面把它们绑在两种模式上（白天=普通，夜晚=万圣节）。地点、拍摄时间、同行者可以为空，空就是空：拍摄时间未知时，网站写"Added … · 3 days ago"，并注明那是发布时间，而不是"Spotted at"。
+
+## 动效
+
+- 入场：模型带弹簧落下，说明文字逐段浮现。
+- 悬停：模型随指针做 3D 倾斜，表面高光只落在建筑轮廓上（用图片本身做遮罩），离开时弹回。
+- 白天/夜晚：从按钮位置圆形扩散切换（View Transitions），夜景窗户带暖光。
+- 普通/万圣节：模型像硬纸板立牌一样翻转后换装。
+- 飞行：大图和时间线/网格之间的切换由弹簧驱动，沿弧线飞行，途中略微放大、倾斜并投下阴影，落地时有一点回弹。
+- 时间线：两侧的地点从中间向外依次滑入；离中间越远越小、越淡，并朝中间微微转过来，日期和地名有轻微视差。鼠标拖动松手后带惯性滑行，再停到最近的一张。
+- 换地方（到头会绕回另一端）：模型从当前位置（包括手指拖到的位置）滑出，新的一张从另一侧弹回，说明文字跟着同一方向逐段滑入。
+- 文字：在大图和时间线之间切换时，地名是同一个元素在飞——从时间线的标签放大成大图下的地名，或反过来缩回标签；其余文字先淡出、再逐段浮现。所有文字动画只用位移和透明度，不用模糊滤镜。
+- 流畅度：时间线在空闲时提前建好并预先绘制一次，打开时不再卡一帧；夜晚装饰在日夜揭幕动画结束后再加上。
+- 切到夜晚时，小南瓜和火星从楼里蹦出来落下；模式按钮里太阳转出、南瓜头弹入。按下模型会轻轻压扁再弹回。
+- 动画进行中的点击和按键不会丢，会在当前动画结束后执行。
+- 全部地点：大图飞入网格中对应的位置，返回时再飞回来；网格依次浮现。
+- 夜晚氛围：月亮升起并缓慢呼吸发光；蝙蝠（带橙色描边，夜里也看得清）沿随机路线扇翅飞过，有几只专门掠过月亮；小幽灵在两侧飘、眨眼、眼睛看向指针，偶尔有一只从建筑后面探头；蜘蛛顺着丝上下荡；雾气漂移、火星上升、建筑下方烛光闪烁。所有装饰都在内容后面，不会挡住建筑和文字。
+- 切换视图时，文字和其他图片先淡出，确认要显示的图片已解码后再在同一帧里切换，避免 Safari 上闪一下。
+- 系统开启"减少动态效果"时全部关闭。
+
+## 运行
+
+需要 Node ≥ 22.12。
+
+```bash
+npm ci
+npm run verify       # 全部测试 + 构建
+npm run e2e:local    # 在本地 workerd 里跑完整链路（本地模拟 D1/R2，不连 Cloudflare，合成素材）
+npm run dev          # 只看页面（没有后端时显示加载失败）
+```
+
+发布一条（需要后端地址和所有者令牌，令牌只放环境变量）：
+
+```bash
+export HC_API_URL=https://…  HC_TOKEN=…
+npm run prepare:images -- --day raw-day.png --night raw-night.png --out-dir prep
+npm run hc -- review --day prep/day.png --night prep/night.png --theme halloween --text "at …" --out ws
+npm run hc -- submit  --dir ws      # 注册并上传；此时什么都没公开
+npm run hc -- approve --dir ws      # 只在你明确要求发布之后
+npm run hc -- publish --dir ws      # 发布，并核验公开图片的状态、类型和字节哈希
+```
+
+部署记录与步骤见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+
+## 测试
+
+`npm test` 覆盖：规范化哈希与输入校验、状态机、批准（缺失、过期、撤销、错目标）、发布（重复、并发、同键异内容、提交前失败、提交后响应丢失、第二张图上传失败、批次回滚）、权限（匿名、错令牌、他人草稿）、隐私（公开接口无私密字段，未发布图片不可访问）、PNG 结构检查（签名、CRC、截断、尾随数据、未知关键块、解压炸弹）、图片准备（多种背景色、自带透明、内部同色细节保留、去碎点、共享构图、拒绝杂乱背景）、网站显示逻辑与弹簧、页面脚本只读不写、Skill 与命令一致性、Cloudflare 远程操作守卫。
+
+数据库测试用 `node:sqlite` 替身，对象存储用内存替身；`npm run e2e:local` 在真实的 Workers 运行时里跑。并发只在单进程内测试，生产环境的竞争没有压测。
+
+## 现状与限制（如实）
+
+- Skill 还没在真实宿主里配真实照片跑过；提示词和图片准备只用合成素材验证过，第一次真实出图可能需要调整。
+- ChatGPT 插件（OAuth + MCP）在本地真实运行时里按协议完整测通（注册、授权、令牌交换、刷新、调用工具、授权码重用会吊销），但还没在你的 ChatGPT 账号里实际连过；ChatGPT 传文件给工具的细节以实际为准。
+- 批准是代理声明（见上），没有网页确认按钮。
+- 没有速率限制，没有替换、回滚或删除功能。
+- 视觉检查（招牌、结构、夜景是不是同一栋楼）由代理和你完成，脚本只做机械检查。
+- 页面在浏览器中做过可视检查，没有做自动化浏览器测试或读屏器测试。
+
+## Kiro 开发记录
+
+- `.kiro/specs/halloween-checkin/`：需求、设计、任务。需求与设计初稿来自设计交接包；实现决策和任务勾选在 Kiro 中按实际完成情况更新。
+- `.kiro/steering/project.md`：项目约束。
+- `.kiro/hooks/`：执行 wrangler 远程/破坏性操作前要求确认（`scripts/guard-cloudflare.mjs`）；保存源码时跑测试。
+- 本仓库的代码、测试、Skill 文案和提示词在 Kiro 中编写。更早的开发过程保存在作者的私有开发仓库里。
+- 生图不是 Kiro 的能力：真实流程里的图片由宿主 AI 生成。
+
+## 致谢与来源
+
+- 夜晚模式里的小幽灵是参考 Kiro 的小鬼形象、为本项目重新画的 SVG，不是 Kiro 官方 logo 文件；没有找到 Kiro 的公开品牌使用规范，如需使用官方 logo 应先确认其品牌规定。
+
+- "主页上一句话告诉你我最近在哪里，配一张那个地方的小图"这个想法，来自设计师 [Peng Zheng 的个人主页](https://www.pengzhe.ng/)，也来自作者早先受它启发做的 August Check-in。本仓库的代码、样式、文案、提示词和素材都是为本项目重新编写的，没有复制它们。
+- 依赖：[Astro](https://astro.build)、[sharp](https://sharp.pixelplumbing.com)、[Wrangler](https://developers.cloudflare.com/workers/wrangler/)。
+- 演示素材是代码画的合成小房子，不对应真实地点。
+
+## 许可证
+
+代码以 [MIT](LICENSE) 许可发布。线上展示的建筑图片由 AI 图像工具生成，不在代码许可范围内。
